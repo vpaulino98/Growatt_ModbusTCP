@@ -1780,8 +1780,18 @@ class GrowattModbus:
                         abs(combined_raw)
                     )
 
-                battery_power = self._get_register_value(addr) or 0.0
-                logger.debug(f"Battery power (signed): HIGH={raw_high} (reg {pair_addr}), LOW={raw_low} (reg {addr}) → {battery_power}W")
+                # BUGFIX: When battery voltage is very low (disconnected/dead battery),
+                # power registers may contain garbage values that produce astronomical
+                # power readings when combined as signed 32-bit (e.g., SPF 5000 ES reports
+                # reg77=50000, reg78=0 → combined=-1018167296 → scaled to 101MW).
+                # Set power to 0 when voltage is below threshold for meaningful power flow.
+                BATTERY_VOLTAGE_THRESHOLD = 10.0  # Volts
+                if data.battery_voltage < BATTERY_VOLTAGE_THRESHOLD:
+                    battery_power = 0.0
+                    logger.debug(f"Battery power set to 0W (voltage {data.battery_voltage}V below {BATTERY_VOLTAGE_THRESHOLD}V threshold, ignoring registers HIGH={raw_high} LOW={raw_low})")
+                else:
+                    battery_power = self._get_register_value(addr) or 0.0
+                    logger.debug(f"Battery power (signed): HIGH={raw_high} (reg {pair_addr}), LOW={raw_low} (reg {addr}) → {battery_power}W")
 
                 # Apply inversion if configured (for inverters with opposite sign convention)
                 if self._invert_battery_power:
