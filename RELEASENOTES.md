@@ -6,8 +6,6 @@
 
 ## v0.6.2
 
-> **Beta:** `v0.6.2b1` — in testing.
-
 ### 🔧 Fix — MIN TL-XH Battery Energy Totals Showing Zero (Issue #191)
 
 Three battery energy sensors were always reporting 0 for **MIN TL-XH 3000-10000 V2.01** inverters after the v0.6.1 upgrade.
@@ -26,6 +24,30 @@ Three battery energy sensors were always reporting 0 for **MIN TL-XH 3000-10000 
 | 3135 / 3136 | AC Charge Energy Total | 37.4 kWh (grid→battery lifetime) |
 
 The `ac_charge_energy_total` register (3135/3136) tracks exclusively grid→battery charging, matching the Growatt server "Batterieladung aus Stromnetz" lifetime value.
+
+---
+
+### 🔧 Fix — Energy Sensors Show Unavailable When Inverter is Offline (Issue #206)
+
+Energy sensors (device class `energy`, state class `total_increasing`) previously retained their last value when the inverter went offline at night. When the inverter came back online in the morning, Home Assistant's energy statistics briefly saw the previous day's retained value followed by the new day's value, creating artificial spikes or outliers in the energy dashboard.
+
+**Fix:** Energy sensors now report `unavailable` instead of retaining stale values when the inverter is offline. Home Assistant correctly handles unavailable periods in energy statistics — no data gap is recorded, and the dashboard picks up cleanly from the next valid reading.
+
+**Affected sensors:** All energy sensors (energy today, energy total, grid import/export energy, battery charge/discharge energy, AC charge energy) across all inverter models.
+
+**Before:** Inverter goes offline at 22:00 → sensors retain e.g. 12.5 kWh all night → inverter wakes at 06:00 showing 0.1 kWh → HA records a large negative spike to correct the total.
+
+**After:** Inverter goes offline at 22:00 → sensors show `unavailable` → inverter wakes at 06:00 showing 0.1 kWh → HA records normally with no outlier.
+
+---
+
+### 🔧 Fix — Battery Power Garbage Values When Battery Disconnected (Issue #205)
+
+On SPF off-grid inverters with a disconnected or fully depleted battery (voltage = 0V), the battery power registers contained garbage values that were being interpreted as valid signed 32-bit readings. This caused the battery power sensor to show absurd values (e.g. **101 MW**) instead of 0W.
+
+**Root cause:** With battery voltage at 0V, register 77 (battery_power_high) = 50000, register 78 (battery_power_low) = 0. Combined as signed 32-bit: −1,018,167,296. Scaled by −0.1: +101,816,729.6 W.
+
+**Fix:** Added a voltage threshold check — if battery voltage is below 10V, battery power is forced to 0W regardless of register values. Affected models: SPF series and potentially other models with battery storage when the battery is physically absent.
 
 ---
 
