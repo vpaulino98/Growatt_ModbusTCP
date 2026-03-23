@@ -455,8 +455,8 @@ WRITABLE_REGISTERS = {
 # Sensor offline behavior mapping
 SENSOR_OFFLINE_BEHAVIOR = {
     'power': 0,                 # Power sensors go to 0W
-    'daily_total': 'retain',    # Daily totals retain until midnight
-    'lifetime_total': 'retain', # Lifetime totals always retain
+    'daily_total': None,        # Daily totals go unavailable when offline (fixes HA statistics outliers)
+    'lifetime_total': None,     # Lifetime totals go unavailable when offline (fixes HA statistics outliers)
     'diagnostic': None,         # Diagnostic sensors go unavailable
     'status': 'offline',        # Status shows "offline"
 }
