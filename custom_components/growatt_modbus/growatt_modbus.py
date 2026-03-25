@@ -1599,10 +1599,19 @@ class GrowattModbus:
         consistent register usage across all battery sensors.
 
         Returns:
-            'vpp', 'fallback', or 'unknown'
+            'vpp', 'fallback', 'legacy', or 'unknown'
         """
         if self._battery_range_detected:
             return self._battery_register_range
+
+        # SPF off-grid inverters use legacy 0-97 range only — skip VPP/fallback detection
+        # (Issue #204: range scoring only covers 1000-3999 and 31000+, so SPF registers
+        # at 0-97 always scored 0 and defaulted to 'fallback', filtering out register 17)
+        if self.register_map.get('offgrid_protocol', False):
+            self._battery_register_range = 'legacy'
+            self._battery_range_detected = True
+            logger.debug("Battery register range: legacy (0-999) — offgrid_protocol=True")
+            return 'legacy'
 
         # Key sensors to check for valid data (non-zero indicates active range)
         test_sensors = [
@@ -1671,6 +1680,11 @@ class GrowattModbus:
             preferred_addrs = [a for a in addresses if a >= 31000]
             if not preferred_addrs:
                 # Register doesn't exist in VPP range - return None to trigger fallback logic
+                return None
+        elif preferred_range == 'legacy':
+            # Off-grid/SPF: registers in base range 0-999 (Issue #204)
+            preferred_addrs = [a for a in addresses if a < 1000]
+            if not preferred_addrs:
                 return None
         else:  # 'fallback' or 'unknown'
             # Prefer fallback range (1000-3999), strict - no fallback
