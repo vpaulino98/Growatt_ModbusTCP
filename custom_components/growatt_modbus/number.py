@@ -86,6 +86,9 @@ async def async_setup_entry(
     for control_name, control_config in WRITABLE_REGISTERS.items():
         if 'options' in control_config:
             continue  # Skip select controls
+        # Time period start/end use hex-packed encoding — handled as TimeEntity in time.py
+        if 'time_period' in control_name and control_name.endswith(('_start', '_end')):
+            continue
 
         register_num = control_config['register']
         if register_num not in holding_registers:

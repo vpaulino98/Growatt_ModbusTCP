@@ -4,6 +4,39 @@
 
 ---
 
+## v0.6.4
+
+- #204 · #214
+
+### 🔧 Fix — Time Period Controls Show HH:MM Time Picker Instead of Raw Numbers (Issue #214)
+
+**SPH** inverter users with time period controls (e.g., SPH 3600) reported the start/end time displays showing values like `1.536` and `5.632` instead of readable times. These correspond to 06:00 and 22:00. Any attempted writes were sending incorrect values to the inverter hardware.
+
+**Root cause:** The inverter stores time in a **hex-packed byte format** — `hours × 256 + minutes` — not the HHMM decimal format the code assumed. 06:00 encodes as `0x0600 = 1536` and 22:00 as `0x1600 = 5632`. The previous `NumberEntity` implementation displayed the raw integer directly (showing `1536`) and wrote user-entered values without conversion (writing `600` for "06:00" produced `0x0258` = 02h 88m — invalid time).
+
+**Fix:**
+
+- Replaced the 6 time period start/end `NumberEntity` controls with a new `TimeEntity` platform (`time.py`)
+- `TimeEntity` provides a native **HH:MM time picker** in the Home Assistant UI
+- Decode: `raw → (hours = raw >> 8, minutes = raw & 0xFF) → datetime.time(hours, minutes)`
+- Encode: `datetime.time(h, m) → (h << 8) | m → register write`
+- Added `Platform.TIME` to `__init__.py` platform list
+- Number entities no longer created for `time_period_*_start/end` controls (to avoid duplicates)
+
+**Impact:** Time period enable controls (`time_period_*_enable`) are unchanged — they remain Select entities (Enabled/Disabled).
+
+---
+
+### 🔧 Fix — SPF 5000/6000 ES Battery Entities Showing Zero Since v0.6.0 (Issue #204)
+
+**SPF 5000 ES** and **SPF 6000 ES Plus** users reported all battery entities (voltage, SOC, power, temperature) showing 0 after upgrading from v0.5.9. Direct register reads confirmed the data was present — e.g., register 18 returned 48.73V — but the HA entity showed 0.0V.
+
+**Root cause:** Commit `e26a870` (v0.6.0) introduced `_detect_battery_register_range()` to resolve an ambiguity in models that expose battery data at both VPP (31000+) and fallback (1000–3999) addresses. The scoring logic awards points only for addresses in those two ranges. SPF uses the legacy base range (registers 0–97), so neither score incremented — both stayed 0 — and the code defaulted to `'fallback'`. The subsequent `_find_register_by_name_with_fallback()` then filtered for `1000 ≤ addr < 4000`, which excluded SPF's register 17 (`battery_voltage`), returning `None`. All battery values silently fell back to 0.
+
+**Fix:** Added `'legacy'` range handling to both methods in `growatt_modbus.py`. When `offgrid_protocol=True` (set in all SPF profiles), `_detect_battery_register_range()` immediately returns `'legacy'` without running the scoring loop. `_find_register_by_name_with_fallback()` then accepts any address below 1000 for `'legacy'` range — matching SPF's register space correctly.
+
+---
+
 ## v0.6.3
 
 - #174 · #207 · #209 · #210 · #211
