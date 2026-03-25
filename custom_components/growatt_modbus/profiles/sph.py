@@ -421,7 +421,22 @@ SPH_3000_6000_V201 = {
         17: {'name': 'battery_soc_legacy', 'scale': 1, 'unit': '%', 'desc': 'Legacy SOC register (shows 0 - use VPP register 31217)'},
 
         # === STORAGE RANGE REGISTERS (1000-1124) ===
-        # Grid Energy (to grid / export)
+        # Power Flow (storage range — Modbus RTU V1.20, issue #207)
+        # 1021: PactouserTotal  = AC power to user total (grid import)
+        # 1029: Pactogrid total = AC power to grid total (grid export)
+        # 1037: PLocalLoad total = INV power to local load total
+        1021: {'name': 'power_to_user_high', 'scale': 1, 'unit': '', 'pair': 1022, 'desc': 'AC power to user total H (PactouserTotal)'},
+        1022: {'name': 'power_to_user_low', 'scale': 1, 'unit': '', 'pair': 1021, 'combined_scale': 0.1, 'combined_unit': 'W'},
+        1029: {'name': 'power_to_grid_high', 'scale': 1, 'unit': '', 'pair': 1030, 'desc': 'AC power to grid total H (Pactogrid total)'},
+        1030: {'name': 'power_to_grid_low', 'scale': 1, 'unit': '', 'pair': 1029, 'combined_scale': 0.1, 'combined_unit': 'W', 'signed': True},
+        1037: {'name': 'power_to_load_high', 'scale': 1, 'unit': '', 'pair': 1038, 'desc': 'INV power to local load total H (PLocalLoad total)'},
+        1038: {'name': 'power_to_load_low', 'scale': 1, 'unit': '', 'pair': 1037, 'combined_scale': 0.1, 'combined_unit': 'W'},
+
+        # Grid Energy — import and export (storage range)
+        1044: {'name': 'energy_to_user_today_high', 'scale': 1, 'unit': '', 'pair': 1045, 'desc': 'Energy to user today H (Etouser_today)'},
+        1045: {'name': 'energy_to_user_today_low', 'scale': 1, 'unit': '', 'pair': 1044, 'combined_scale': 0.1, 'combined_unit': 'kWh'},
+        1046: {'name': 'energy_to_user_total_high', 'scale': 1, 'unit': '', 'pair': 1047, 'desc': 'Energy to user total H'},
+        1047: {'name': 'energy_to_user_total_low', 'scale': 1, 'unit': '', 'pair': 1046, 'combined_scale': 0.1, 'combined_unit': 'kWh'},
         1048: {'name': 'energy_to_grid_today_high', 'scale': 1, 'unit': '', 'pair': 1049},
         1049: {'name': 'energy_to_grid_today_low', 'scale': 1, 'unit': '', 'pair': 1048, 'combined_scale': 0.1, 'combined_unit': 'kWh'},
         1050: {'name': 'energy_to_grid_total_high', 'scale': 1, 'unit': '', 'pair': 1051},
@@ -578,7 +593,22 @@ SPH_7000_10000_V201 = {
         17: {'name': 'battery_soc_legacy', 'scale': 1, 'unit': '%', 'desc': 'Legacy SOC register (shows 0 - use VPP register 31217)'},
 
         # === STORAGE RANGE REGISTERS (1000-1124) ===
-        # Grid Energy (to grid / export)
+        # Power Flow (storage range — Modbus RTU V1.20, issue #207)
+        # 1021: PactouserTotal  = AC power to user total (grid import)
+        # 1029: Pactogrid total = AC power to grid total (grid export)
+        # 1037: PLocalLoad total = INV power to local load total
+        1021: {'name': 'power_to_user_high', 'scale': 1, 'unit': '', 'pair': 1022, 'desc': 'AC power to user total H (PactouserTotal)'},
+        1022: {'name': 'power_to_user_low', 'scale': 1, 'unit': '', 'pair': 1021, 'combined_scale': 0.1, 'combined_unit': 'W'},
+        1029: {'name': 'power_to_grid_high', 'scale': 1, 'unit': '', 'pair': 1030, 'desc': 'AC power to grid total H (Pactogrid total)'},
+        1030: {'name': 'power_to_grid_low', 'scale': 1, 'unit': '', 'pair': 1029, 'combined_scale': 0.1, 'combined_unit': 'W', 'signed': True},
+        1037: {'name': 'power_to_load_high', 'scale': 1, 'unit': '', 'pair': 1038, 'desc': 'INV power to local load total H (PLocalLoad total)'},
+        1038: {'name': 'power_to_load_low', 'scale': 1, 'unit': '', 'pair': 1037, 'combined_scale': 0.1, 'combined_unit': 'W'},
+
+        # Grid Energy — import and export (storage range)
+        1044: {'name': 'energy_to_user_today_high', 'scale': 1, 'unit': '', 'pair': 1045, 'desc': 'Energy to user today H (Etouser_today)'},
+        1045: {'name': 'energy_to_user_today_low', 'scale': 1, 'unit': '', 'pair': 1044, 'combined_scale': 0.1, 'combined_unit': 'kWh'},
+        1046: {'name': 'energy_to_user_total_high', 'scale': 1, 'unit': '', 'pair': 1047, 'desc': 'Energy to user total H'},
+        1047: {'name': 'energy_to_user_total_low', 'scale': 1, 'unit': '', 'pair': 1046, 'combined_scale': 0.1, 'combined_unit': 'kWh'},
         1048: {'name': 'energy_to_grid_today_high', 'scale': 1, 'unit': '', 'pair': 1049},
         1049: {'name': 'energy_to_grid_today_low', 'scale': 1, 'unit': '', 'pair': 1048, 'combined_scale': 0.1, 'combined_unit': 'kWh'},
         1050: {'name': 'energy_to_grid_total_high', 'scale': 1, 'unit': '', 'pair': 1051},

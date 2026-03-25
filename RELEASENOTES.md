@@ -4,6 +4,92 @@
 
 ---
 
+## v0.6.3
+
+- #174 · #207 · #209 · #210 · #211
+
+### 🔧 Fix — SPH TL3 Energy Today Missing PV3 String (Issue #211)
+
+**SPH TL3 10000** (and other 3-MPPT models) showed `Energy Today` roughly **1/3 lower than expected** after the v0.5.0 upgrade.
+
+**Root cause:** The v0.5.0 fix for Issue #172 changed `energy_today` to use per-MPPT DC energy registers (pv1+pv2) instead of AC output register 53-54. However, the profile and coordinator never included **PV string 3** (registers 67-68, `Epv3_today`) in the sum — so on 3-string inverters the PV3 contribution was silently dropped.
+
+**Fix:**
+
+- Added `pv3_energy_today_high/low` (registers 67-68) to `profiles/sph_tl3.py`
+- Added `pv3_energy_today` field to `GrowattData` dataclass
+- Coordinator now reads PV3 energy and includes it in the `energy_today` sum when PV3 is connected
+
+**Impact:** 2-string models are unaffected (`pv3_connected = False` gates the addition).
+
+---
+
+### 🔧 Fix — SPH TL3 Grid Import Energy Mirrors Export (Issues #209, #211)
+
+**SPH TL3** users with `Invert Grid Power` enabled reported that `Grid Import Energy Today` showed the same values as grid export energy — effectively mirroring it.
+
+**Root cause:** The v0.5.1 fix for Issue #183 introduced a code path where, when `invert_grid_power=True` and a hardware energy register is available, the code reads from `energy_to_grid_today` (export) instead of `energy_to_user_today` (import). This was based on the assumption that CT clamp orientation also swaps the hardware energy accumulators.
+
+**Why the assumption is wrong:** SPH TL3's energy registers (1044-1051) are accumulated by the inverter's **internal bidirectional power meter**, independent of CT clamp direction. `energy_to_user_today` always correctly measures grid import regardless of CT orientation — only real-time power registers need CT inversion.
+
+**Fix:** Removed the CT-orientation swap for hardware energy registers in `sensor.py`. When hardware import registers are available, they are always used directly. The `invert_grid_power` flag continues to apply correctly to all real-time power sensors.
+
+---
+
+### 🔧 Fix — SPH 3-6kW and 7-10kW V2.01 Missing Power Flow Registers (Issue #207)
+
+**SPH 3600** (and all SPH 3-10kW V2.01 protocol models) showed **incorrect grid import/export direction** and **Power to User / Power to Load always 0**.
+
+**Root cause:** The `SPH_3000_6000_V201` and `SPH_7000_10000_V201` profiles were missing the storage-range power flow registers (1015-1038) and grid import energy registers (1044-1047). Without them, `power_to_user`, `power_to_grid`, and `power_to_load` stayed at 0, causing the fallback calculation `(solar + discharge) − (load + charge)` to produce wrong grid direction signs.
+
+**Fix:** Added the following registers to both V201 profiles in `profiles/sph.py`, per Growatt Modbus RTU V1.20 protocol:
+
+| Register | Name | Description |
+| --- | --- | --- |
+| 1021-1022 | `power_to_user` | AC power to user total (grid import power) |
+| 1029-1030 | `power_to_grid` | AC power to grid total (signed: positive=export) |
+| 1037-1038 | `power_to_load` | INV power to local load total |
+| 1044-1045 | `energy_to_user_today` | Grid import energy today |
+| 1046-1047 | `energy_to_user_total` | Grid import energy total |
+
+---
+
+### 🔧 Fix — SPF Battery Power Sign Correction During PV Charging (Issue #174)
+
+**SPF 6000 ES Plus** intermittently showed battery as **discharging when it was actually charging** from solar (status=5, PV Charge).
+
+**Root cause:** SPF hardware occasionally transmits a positive raw value for the battery power register during PV charging. After applying the required sign inversion (`combined_scale=-0.1`), the result becomes negative — misidentified as discharging. Battery current (register 68) cannot be used for validation as it only measures during AC charging.
+
+**Fix:** Added `_validate_spf_battery_power_sign()` method in `growatt_modbus.py`. When `offgrid_protocol=True`, the inverter status code is checked after the hardware sign inversion. If the status indicates charging (codes 5-10) but battery power is negative, or discharging (code 2) but power is positive, the sign is corrected and a warning is logged. A 10W threshold prevents noise correction. Ambiguous status 12 (PV Charge+Discharge) is skipped.
+
+---
+
+### 🔧 Fix — SPH TL3 Missing Controls: AC Charge, Time Periods, Priority Mode (Issue #210)
+
+**SPH 10000TL3 BH-UP** (and all SPH TL3 3-10kW models) were missing the **AC Charge**, **Time Period**, and **Discharge/Charge Rate** control entities in Home Assistant. Additionally, **Priority Mode** changes silently failed to write.
+
+**Root cause — two bugs in `profiles/sph_tl3.py`:**
+
+1. **Missing holding registers:** The base profile only defined 3 holding registers (`on_off`, `system_enable`, `priority`). The integration creates control entities only for registers present in the profile, so 14 registers (1070–1071, 1090–1092, 1100–1108) were absent → no entities created.
+
+2. **Wrong register name:** Register 1044 was named `priority` instead of `priority_mode`. All control write paths resolve registers by name — `SELECT_DEFINITIONS` uses the key `priority_mode`, so no holding register was found at write time → silently dropped.
+
+**Fix:** Replaced the `holding_registers` block in `profiles/sph_tl3.py` with the full 18-register set (matching SPH 7-10kW single-phase), adding the correct name and full metadata for each register. The `SPH_TL3_3000_10000_V201` profile inherits these automatically via Python dict unpacking.
+
+**Controls now available for SPH TL3:**
+
+| Register | Entity | Description |
+| --- | --- | --- |
+| 1044 | Priority Mode | Load First / Battery First / Grid First |
+| 1070 | Discharge Power Rate | % limit on battery discharge |
+| 1071 | Discharge Stop SOC | SOC% at which discharge halts |
+| 1090 | Charge Power Rate | % limit on battery charge |
+| 1091 | Charge Stop SOC | SOC% at which charge halts |
+| 1092 | AC Charge Enable | Enable/disable charging from grid |
+| 1100–1108 | Time Periods 1–3 | Start/end/enable for timed charge windows |
+
+---
+
 ## v0.6.2
 
 ### 🔧 Fix — MIN TL-XH Battery Energy Totals Showing Zero (Issue #191)

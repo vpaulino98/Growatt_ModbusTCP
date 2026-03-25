@@ -71,6 +71,10 @@ SPH_TL3_3000_10000 = {
         63: {'name': 'pv2_energy_today_high', 'scale': 1, 'unit': '', 'pair': 64, 'desc': 'PV2 DC energy today HIGH (true solar production from string 2)'},
         64: {'name': 'pv2_energy_today_low', 'scale': 1, 'unit': '', 'pair': 63, 'combined_scale': 0.1, 'combined_unit': 'kWh', 'desc': 'PV2 DC energy today LOW'},
 
+        # PV String 3 Energy (for 3-MPPT models like SPH 10000TL3 — Issue #211)
+        67: {'name': 'pv3_energy_today_high', 'scale': 1, 'unit': '', 'pair': 68, 'desc': 'PV3 DC energy today HIGH (Epv3_today H — V1.24 reg 67)'},
+        68: {'name': 'pv3_energy_today_low', 'scale': 1, 'unit': '', 'pair': 67, 'combined_scale': 0.1, 'combined_unit': 'kWh', 'desc': 'PV3 DC energy today LOW'},
+
         # Total PV Energy (lifetime sum of all DC input from solar panels)
         91: {'name': 'pv_energy_total_high', 'scale': 1, 'unit': '', 'pair': 92, 'desc': 'Total PV energy lifetime HIGH (DC input from all MPPTs)'},
         92: {'name': 'pv_energy_total_low', 'scale': 1, 'unit': '', 'pair': 91, 'combined_scale': 0.1, 'combined_unit': 'kWh', 'desc': 'Total PV energy lifetime LOW'},
@@ -135,9 +139,73 @@ SPH_TL3_3000_10000 = {
         1063: {'name': 'load_energy_total_low', 'scale': 1, 'unit': '', 'pair': 1062, 'combined_scale': 0.1, 'combined_unit': 'kWh'},
     },
     'holding_registers': {
-        0: {'name': 'on_off', 'scale': 1, 'unit': '', 'access': 'RW'},
+        0: {'name': 'on_off', 'scale': 1, 'unit': '', 'access': 'RW', 'desc': '0=Off, 1=On'},
         1008: {'name': 'system_enable', 'scale': 1, 'unit': '', 'access': 'RW'},
-        1044: {'name': 'priority', 'scale': 1, 'unit': '', 'access': 'RW', 'desc': '0=Load, 1=Battery, 2=Grid'},
+
+        # Battery Management Control
+        1044: {'name': 'priority_mode', 'scale': 1, 'unit': '', 'access': 'RW',
+               'desc': 'Priority mode selection',
+               'valid_range': (0, 2),
+               'values': {
+                   0: 'Load First',
+                   1: 'Battery First',
+                   2: 'Grid First'
+               }},
+
+        # Discharge Control
+        1070: {'name': 'discharge_power_rate', 'scale': 1, 'unit': '%', 'access': 'RW',
+               'valid_range': (0, 100),
+               'desc': 'Battery discharge power rate limit (0-100%)'},
+        1071: {'name': 'discharge_stopped_soc', 'scale': 1, 'unit': '%', 'access': 'RW',
+               'valid_range': (0, 100),
+               'desc': 'SOC level to stop battery discharge (0-100%)'},
+
+        # Charge Control
+        1090: {'name': 'charge_power_rate', 'scale': 1, 'unit': '%', 'access': 'RW',
+               'valid_range': (0, 100),
+               'desc': 'Battery charge power rate limit (0-100%)'},
+        1091: {'name': 'charge_stopped_soc', 'scale': 1, 'unit': '%', 'access': 'RW',
+               'valid_range': (0, 100),
+               'desc': 'SOC level to stop battery charge (0-100%)'},
+        1092: {'name': 'ac_charge_enable', 'scale': 1, 'unit': '', 'access': 'RW',
+               'desc': 'Enable charging from AC (grid/backup)',
+               'values': {
+                   0: 'Disabled',
+                   1: 'Enabled'
+               }},
+
+        # Time Period 1 Control (for time-based charging/discharging)
+        1100: {'name': 'time_period_1_start', 'scale': 1, 'unit': '', 'access': 'RW',
+               'valid_range': (0, 2359),
+               'desc': 'Period 1 start time in HHMM format (e.g., 530 = 05:30, 2300 = 23:00)'},
+        1101: {'name': 'time_period_1_end', 'scale': 1, 'unit': '', 'access': 'RW',
+               'valid_range': (0, 2359),
+               'desc': 'Period 1 end time in HHMM format'},
+        1102: {'name': 'time_period_1_enable', 'scale': 1, 'unit': '', 'access': 'RW',
+               'desc': 'Enable time period 1',
+               'values': {0: 'Disabled', 1: 'Enabled'}},
+
+        # Time Period 2 Control
+        1103: {'name': 'time_period_2_start', 'scale': 1, 'unit': '', 'access': 'RW',
+               'valid_range': (0, 2359),
+               'desc': 'Period 2 start time in HHMM format'},
+        1104: {'name': 'time_period_2_end', 'scale': 1, 'unit': '', 'access': 'RW',
+               'valid_range': (0, 2359),
+               'desc': 'Period 2 end time in HHMM format'},
+        1105: {'name': 'time_period_2_enable', 'scale': 1, 'unit': '', 'access': 'RW',
+               'desc': 'Enable time period 2',
+               'values': {0: 'Disabled', 1: 'Enabled'}},
+
+        # Time Period 3 Control
+        1106: {'name': 'time_period_3_start', 'scale': 1, 'unit': '', 'access': 'RW',
+               'valid_range': (0, 2359),
+               'desc': 'Period 3 start time in HHMM format'},
+        1107: {'name': 'time_period_3_end', 'scale': 1, 'unit': '', 'access': 'RW',
+               'valid_range': (0, 2359),
+               'desc': 'Period 3 end time in HHMM format'},
+        1108: {'name': 'time_period_3_enable', 'scale': 1, 'unit': '', 'access': 'RW',
+               'desc': 'Enable time period 3',
+               'values': {0: 'Disabled', 1: 'Enabled'}},
     }
 }
 
