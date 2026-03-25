@@ -1220,7 +1220,7 @@ class GrowattModbusSensor(CoordinatorEntity, SensorEntity):
 
             elif self._sensor_key == "grid_import_energy_today":
                 # Grid import energy - use hardware register if available, otherwise calculate
-                # SPH/SPH-TL3: energy_to_user_today (VPP: "Total forward power/energy" = grid import)
+                # SPH/SPH-TL3: energy_to_user_today (hardware bidirectional meter = grid import)
                 # Other models: energy_from_grid_today
 
                 # Check if inverter has hardware import energy register
@@ -1230,13 +1230,11 @@ class GrowattModbusSensor(CoordinatorEntity, SensorEntity):
                     is_sph_family and hasattr(data, "energy_to_user_today")
                 )
 
-                if invert_grid_power and has_hardware_import:
-                    # CT clamp backwards AND inverter has hardware import register
-                    # When CT is backwards, import/export are swapped, so read from export register
-                    raw_value = getattr(data, "energy_to_grid_today", 0)
-                elif has_hardware_import:
-                    # Hardware register available and CT clamp is correct orientation
-                    # Use the hardware import register directly
+                if has_hardware_import:
+                    # Hardware energy registers are accumulated by the inverter's internal
+                    # bidirectional power meter, independent of CT clamp orientation.
+                    # energy_to_user_today always correctly measures grid import regardless
+                    # of CT direction — do NOT swap based on invert_grid_power (Issue #211).
                     raw_value = getattr(data, "energy_to_user_today", 0) if hasattr(data, "energy_to_user_today") else getattr(data, "energy_from_grid_today", 0)
                 else:
                     # No hardware import register - must calculate
@@ -1251,7 +1249,7 @@ class GrowattModbusSensor(CoordinatorEntity, SensorEntity):
 
             elif self._sensor_key == "grid_import_energy_total":
                 # Grid import energy - use hardware register if available, otherwise calculate
-                # SPH/SPH-TL3: energy_to_user_total (VPP: "Total forward power/energy" = grid import)
+                # SPH/SPH-TL3: energy_to_user_total (hardware bidirectional meter = grid import)
                 # Other models: energy_from_grid_total
 
                 # Check if inverter has hardware import energy register
@@ -1261,13 +1259,11 @@ class GrowattModbusSensor(CoordinatorEntity, SensorEntity):
                     is_sph_family and hasattr(data, "energy_to_user_total")
                 )
 
-                if invert_grid_power and has_hardware_import:
-                    # CT clamp backwards AND inverter has hardware import register
-                    # When CT is backwards, import/export are swapped, so read from export register
-                    raw_value = getattr(data, "energy_to_grid_total", 0)
-                elif has_hardware_import:
-                    # Hardware register available and CT clamp is correct orientation
-                    # Use the hardware import register directly
+                if has_hardware_import:
+                    # Hardware energy registers are accumulated by the inverter's internal
+                    # bidirectional power meter, independent of CT clamp orientation.
+                    # energy_to_user_total always correctly measures grid import regardless
+                    # of CT direction — do NOT swap based on invert_grid_power (Issue #211).
                     raw_value = getattr(data, "energy_to_user_total", 0) if hasattr(data, "energy_to_user_total") else getattr(data, "energy_from_grid_total", 0)
                 else:
                     # No hardware import register - must calculate

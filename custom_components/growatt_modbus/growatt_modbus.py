@@ -127,6 +127,7 @@ class GrowattData:
     pv3_voltage: float = 0.0          # V
     pv3_current: float = 0.0          # A
     pv3_power: float = 0.0            # W
+    pv3_energy_today: float = 0.0     # kWh (3-string models like SPH TL3 10000 - Issue #211)
     pv_total_power: float = 0.0       # W
     pv_energy_total: float = 0.0      # kWh (WIT total PV lifetime energy - Issue #146)
     
@@ -566,6 +567,60 @@ class GrowattModbus:
             self._track_read_failure()
             return None
 
+    def _validate_spf_battery_power_sign(self, battery_power: float, data: 'GrowattData') -> float:
+        """
+        Validate and correct battery power sign for SPF off-grid inverters.
+
+        SPF intermittently reports the battery power register with wrong sign during
+        PV charging. The inverter_status code is a reliable indicator of the actual
+        operational mode and is used to detect and correct sign errors.
+
+        Note: battery_current cannot be used here - SPF hardware only measures
+        current during AC charging (register 68 returns 0 during PV charging or
+        discharging), which is exactly when this bug manifests.
+
+        Only applies when abs(battery_power) > 10W to avoid correcting near-zero noise.
+        Only called when offgrid_protocol=True (SPF models only).
+
+        SPF status codes:
+          5=PV Charge, 6=AC Charge, 7=Combine Charge, 8=Combine Charge+Bypass,
+          9=PV Charge+Bypass, 10=AC Charge+Bypass → battery_power must be positive
+          2=Discharge → battery_power must be negative
+          0,1,3,4,11,12 → skipped (ambiguous or no meaningful correction)
+        """
+        MIN_POWER_THRESHOLD = 10.0  # W - avoid correcting near-zero noise
+
+        if abs(battery_power) < MIN_POWER_THRESHOLD:
+            return battery_power
+
+        status = int(data.inverter_status)
+
+        # Charging states: battery is receiving power — sign must be positive
+        CHARGING_STATES = {5, 6, 7, 8, 9, 10}
+        # Discharging state: battery is supplying power — sign must be negative
+        DISCHARGING_STATES = {2}
+        # Status 12 (PV Charge+Discharge) is ambiguous — skip correction
+        # Status 0,1,3,4,11 are standby/fault/bypass — skip correction
+
+        if status in CHARGING_STATES and battery_power < 0:
+            pv_power = getattr(data, 'pv1_power', 0.0) + getattr(data, 'pv2_power', 0.0)
+            logger.warning(
+                f"[SPF sign correction] Status {status} indicates charging but "
+                f"battery_power={battery_power:.1f}W is negative — correcting to "
+                f"{-battery_power:.1f}W (PV={pv_power:.0f}W) [issue #174]"
+            )
+            return -battery_power
+
+        if status in DISCHARGING_STATES and battery_power > 0:
+            logger.warning(
+                f"[SPF sign correction] Status {status} indicates discharging but "
+                f"battery_power={battery_power:.1f}W is positive — correcting to "
+                f"{-battery_power:.1f}W [issue #174]"
+            )
+            return -battery_power
+
+        return battery_power
+
     def _detect_battery_power_scale(self, voltage: float, current: float, power_register_value: int) -> Optional[float]:
         """
         Auto-detect correct battery power scale using V×I validation.
@@ -972,6 +1027,11 @@ class GrowattModbus:
                 data.pv2_energy_today = self._get_register_value(pv2_energy_today_addr) or 0.0
                 logger.debug(f"[{self.register_map['name']}] PV2 energy today from reg {pv2_energy_today_addr}: {data.pv2_energy_today} kWh")
 
+            pv3_energy_today_addr = self._find_register_by_name('pv3_energy_today_low')
+            if pv3_energy_today_addr:
+                data.pv3_energy_today = self._get_register_value(pv3_energy_today_addr) or 0.0
+                logger.debug(f"[{self.register_map['name']}] PV3 energy today from reg {pv3_energy_today_addr}: {data.pv3_energy_today} kWh")
+
             pv_energy_total_addr = self._find_register_by_name('pv_energy_total_low')
             if pv_energy_total_addr:
                 data.pv_energy_total = self._get_register_value(pv_energy_total_addr) or 0.0
@@ -1117,24 +1177,27 @@ class GrowattModbus:
                 data.power_to_load = self._get_register_value(power_to_load_addr) or 0.0
             
             # Energy Today
-            # For WIT/MIC with per-MPPT tracking: use sum of PV1+PV2 energy for accurate solar production
+            # For WIT/MIC/SPH-TL3 with per-MPPT tracking: use sum of PV string energy for accurate solar production
             # Registers 53-54 show total system AC output (PV+battery), not PV-only (Issue #146)
             # IMPORTANT: Only use per-MPPT calculation if PV strings are actually connected (avoid garbage data)
             pv1_connected = data.pv1_voltage > 0 or data.pv1_power > 0
             pv2_connected = data.pv2_voltage > 0 or data.pv2_power > 0
+            pv3_connected = data.pv3_voltage > 0 or data.pv3_power > 0
 
-            if (pv1_connected or pv2_connected) and (data.pv1_energy_today > 0 or data.pv2_energy_today > 0):
+            if (pv1_connected or pv2_connected or pv3_connected) and (data.pv1_energy_today > 0 or data.pv2_energy_today > 0 or data.pv3_energy_today > 0):
                 # Calculate energy only from connected strings to avoid garbage data
                 pv_energy_sum = 0.0
                 if pv1_connected and data.pv1_energy_today > 0:
                     pv_energy_sum += data.pv1_energy_today
                 if pv2_connected and data.pv2_energy_today > 0:
                     pv_energy_sum += data.pv2_energy_today
+                if pv3_connected and data.pv3_energy_today > 0:
+                    pv_energy_sum += data.pv3_energy_today
 
                 # Sanity check: per-MPPT energy should be reasonable (< 100 kWh per day for MIC/small inverters)
                 if pv_energy_sum < 100:
                     data.energy_today = pv_energy_sum
-                    logger.debug(f"[{self.register_map['name']}@{self.connection_id}] Energy today from connected MPPTs: PV1={data.pv1_energy_today if pv1_connected else 'N/A'} + PV2={data.pv2_energy_today if pv2_connected else 'N/A'} = {data.energy_today} kWh")
+                    logger.debug(f"[{self.register_map['name']}@{self.connection_id}] Energy today from connected MPPTs: PV1={data.pv1_energy_today if pv1_connected else 'N/A'} + PV2={data.pv2_energy_today if pv2_connected else 'N/A'} + PV3={data.pv3_energy_today if pv3_connected else 'N/A'} = {data.energy_today} kWh")
                 else:
                     # Garbage data detected - fall back to register reading
                     logger.warning(f"[{self.register_map['name']}@{self.connection_id}] Per-MPPT energy {pv_energy_sum} kWh unrealistic - using fallback register instead")
@@ -1797,6 +1860,11 @@ class GrowattModbus:
                 if self._invert_battery_power:
                     battery_power = -battery_power
                     logger.debug(f"  → Inverted battery power: {battery_power}W (invert_battery_power=True)")
+
+                # SPF-only: validate sign against inverter status code to correct
+                # intermittent hardware sign errors during PV charging (issue #174)
+                if self.register_map.get('offgrid_protocol', False):
+                    battery_power = self._validate_spf_battery_power_sign(battery_power, data)
 
                 # Split into charge/discharge based on sign
                 # Convention: positive=charging, negative=discharging
