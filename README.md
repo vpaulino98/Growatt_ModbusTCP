@@ -1,7 +1,7 @@
 # Growatt Modbus Integration for Home Assistant ☀️
 
 ![HACS Badge](https://img.shields.io/badge/HACS-Custom-orange.svg)
-![Version](https://img.shields.io/badge/Version-0.6.4-blue.svg)
+![Version](https://img.shields.io/badge/Version-0.6.5-blue.svg)
 [![GitHub Issues](https://img.shields.io/github/issues/0xAHA/Growatt_ModbusTCP.svg)](https://github.com/0xAHA/Growatt_ModbusTCP/issues)
 [![GitHub Stars](https://img.shields.io/github/stars/0xAHA/Growatt_ModbusTCP.svg?style=social)](https://github.com/0xAHA/Growatt_ModbusTCP)
 
@@ -113,16 +113,17 @@ A native Home Assistant integration for Growatt solar inverters using direct Mod
 **Option 1: TCP/WiFi Adapter (Recommended)**
 
 
-| Adapter                    | Wiring             | Settings                        |
-| ---------------------------- | -------------------- | --------------------------------- |
-| **EW11**                   | RS485 A/B → D+/D- | TCP Server, 9600 baud, port 502 |
-| **USR-W630**               | RS485 A/B → A/B   | Modbus TCP Gateway mode         |
-| **USR-TCP232-410s**        | RS485 A/B → A/B   | TCP Server, 9600 baud, port 502 |
+| Adapter                    | Wiring             | Settings                                                          |
+| ---------------------------- | -------------------- | ------------------------------------------------------------------- |
+| **EW11**                   | RS485 A/B → D+/D- | TCP Server, 9600 baud, port 502                                   |
+| **USR-W630**               | RS485 A/B → A/B   | Modbus TCP Gateway mode                                           |
+| **USR-TCP232-410s**        | RS485 A/B → A/B   | TCP Server, 9600 baud, port 502                                   |
 | **Waveshare RS485-to-ETH** | RS485 A/B → A/B   | 9600 8N1, port 502, Reset: off, Link: on, Index: off, RFC2217: on |
 
 **Waveshare RS485-to-ETH Configuration Details:**
 
 Access the Waveshare web interface and configure:
+
 - **Baud Rate:** 9600
 - **Data Bits:** 8
 - **Parity:** None
