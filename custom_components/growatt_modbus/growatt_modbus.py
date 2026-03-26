@@ -248,16 +248,29 @@ class GrowattData:
     remote_charge_and_discharge_power: int = 0   # -100 to +100% (negative=discharge, positive=charge)
     vpp_export_limit_enable: int = 0          # 0=Disabled, 1=Enabled
     vpp_export_limit_power_rate: int = 0      # -100 to +100% (positive=export, 0=zero export)
+    vpp_export_limit_available: bool = False  # True if inverter actually responded to registers 30200-30201
+
+    # MOD TL3-XH TOU periods (FC04 holding registers 3038-3045, raw packed values)
+    # Start reg: bit15=enable, bit13-14=priority(0=Load,1=Batt,2=Grid), bit8-12=hour, bit0-7=min
+    # End reg: bit8-12=hour, bit0-7=min (hex-packed, same as SPH time periods)
+    mod_tou_1_start: int = 0
+    mod_tou_1_end:   int = 0
+    mod_tou_2_start: int = 0
+    mod_tou_2_end:   int = 0
+    mod_tou_3_start: int = 0
+    mod_tou_3_end:   int = 0
+    mod_tou_4_start: int = 0
+    mod_tou_4_end:   int = 0
 
     time_period_1_enable: int = 0     # 0=Disabled, 1=Enabled
-    time_period_1_start: int = 0      # HHMM format (e.g., 530 = 05:30)
-    time_period_1_end: int = 0        # HHMM format
+    time_period_1_start: int = 0      # hex-packed (hours*256+minutes, e.g. 06:00 = 0x0600 = 1536)
+    time_period_1_end: int = 0        # hex-packed
     time_period_2_enable: int = 0     # 0=Disabled, 1=Enabled
-    time_period_2_start: int = 0      # HHMM format
-    time_period_2_end: int = 0        # HHMM format
+    time_period_2_start: int = 0      # hex-packed
+    time_period_2_end: int = 0        # hex-packed
     time_period_3_enable: int = 0     # 0=Disabled, 1=Enabled
-    time_period_3_start: int = 0      # HHMM format
-    time_period_3_end: int = 0        # HHMM format
+    time_period_3_start: int = 0      # hex-packed
+    time_period_3_end: int = 0        # hex-packed
 
     # SPF Off-Grid Control registers
     output_config: int = 0            # 0=SBU, 1=SOL, 2=UTI, 3=SUB
@@ -1857,15 +1870,20 @@ class GrowattModbus:
                         abs(combined_raw)
                     )
 
-                # BUGFIX: When battery voltage is very low (disconnected/dead battery),
+                # BUGFIX: When battery is truly disconnected/dead (both voltage AND SOC near zero),
                 # power registers may contain garbage values that produce astronomical
                 # power readings when combined as signed 32-bit (e.g., SPF 5000 ES reports
                 # reg77=50000, reg78=0 → combined=-1018167296 → scaled to 101MW).
-                # Set power to 0 when voltage is below threshold for meaningful power flow.
+                # Guard condition: voltage < 10V AND SOC < 5% — both must be near-zero.
+                # If SOC > 5%, battery is connected; some SPF hardware reports 0V in certain
+                # modes (e.g. bypass/standby) while battery is actually present and active.
                 BATTERY_VOLTAGE_THRESHOLD = 10.0  # Volts
-                if data.battery_voltage < BATTERY_VOLTAGE_THRESHOLD:
+                BATTERY_SOC_THRESHOLD = 5.0       # % (below this = battery may be disconnected)
+                battery_appears_disconnected = (data.battery_voltage < BATTERY_VOLTAGE_THRESHOLD
+                                                and data.battery_soc < BATTERY_SOC_THRESHOLD)
+                if battery_appears_disconnected:
                     battery_power = 0.0
-                    logger.debug(f"Battery power set to 0W (voltage {data.battery_voltage}V below {BATTERY_VOLTAGE_THRESHOLD}V threshold, ignoring registers HIGH={raw_high} LOW={raw_low})")
+                    logger.debug(f"Battery power set to 0W (voltage {data.battery_voltage}V < {BATTERY_VOLTAGE_THRESHOLD}V AND SOC {data.battery_soc}% < {BATTERY_SOC_THRESHOLD}% — battery appears disconnected, ignoring registers HIGH={raw_high} LOW={raw_low})")
                 else:
                     battery_power = self._get_register_value(addr) or 0.0
                     logger.debug(f"Battery power (signed): HIGH={raw_high} (reg {pair_addr}), LOW={raw_low} (reg {addr}) → {battery_power}W")
@@ -2254,6 +2272,25 @@ class GrowattModbus:
             except Exception as e:
                 logger.debug(f"Could not read time period control registers: {e}")
 
+        # MOD TL3-XH TOU schedule (FC04 holding registers 3038-3045)
+        if 3038 in holding_map:
+            try:
+                tou_regs = self.read_holding_registers(3038, 8)
+                if tou_regs is not None and len(tou_regs) >= 8:
+                    data.mod_tou_1_start = int(tou_regs[0])
+                    data.mod_tou_1_end   = int(tou_regs[1])
+                    data.mod_tou_2_start = int(tou_regs[2])
+                    data.mod_tou_2_end   = int(tou_regs[3])
+                    data.mod_tou_3_start = int(tou_regs[4])
+                    data.mod_tou_3_end   = int(tou_regs[5])
+                    data.mod_tou_4_start = int(tou_regs[6])
+                    data.mod_tou_4_end   = int(tou_regs[7])
+                    logger.debug("[MOD TOU] periods 1-4 start: %s %s %s %s, end: %s %s %s %s",
+                                 data.mod_tou_1_start, data.mod_tou_2_start, data.mod_tou_3_start, data.mod_tou_4_start,
+                                 data.mod_tou_1_end, data.mod_tou_2_end, data.mod_tou_3_end, data.mod_tou_4_end)
+            except Exception as e:
+                logger.debug(f"Could not read MOD TOU registers 3038-3045: {e}")
+
         # --- WIT VPP Remote Control registers (30000+ range) ---
         # Control Authority (30100)
         if 30100 in holding_map:
@@ -2278,6 +2315,7 @@ class GrowattModbus:
                         if raw_val > 32767:  # Handle signed 16-bit
                             raw_val = raw_val - 65536
                         data.vpp_export_limit_power_rate = int(raw_val)
+                    data.vpp_export_limit_available = True  # Inverter responded to these registers
                     logger.debug("[WIT VPP] vpp_export_limit_enable=%s, vpp_export_limit_power_rate=%s%%",
                                data.vpp_export_limit_enable, data.vpp_export_limit_power_rate)
             except Exception as e:

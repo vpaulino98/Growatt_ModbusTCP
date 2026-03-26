@@ -94,6 +94,12 @@ async def async_setup_entry(
         if register_num not in holding_registers:
             continue  # Skip if register not in this profile
 
+        # VPP export limit requires live confirmation that the inverter responds to 30200-30201
+        if control_name == 'vpp_export_limit_power_rate':
+            if coordinator.data is None or not coordinator.data.vpp_export_limit_available:
+                _LOGGER.debug("Skipping vpp_export_limit_power_rate: register 30201 not confirmed responsive")
+                continue
+
         entities.append(
             GrowattGenericNumber(coordinator, config_entry, control_name, control_config)
         )

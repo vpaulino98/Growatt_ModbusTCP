@@ -263,6 +263,26 @@ MOD_6000_15000TL3_XH = {
             'valid_range': (0, 1000),
             'note': '0=0%, 1000=100.0%'
         },
+
+        # TOU (Time-of-Use) schedule (FC04 holding, registers 3038-3045)
+        # Start registers: bit15=enable, bit13-14=priority(0=Load,1=Battery,2=Grid), bit8-12=hour, bit0-7=minute
+        # End registers: bit8-12=hour, bit0-7=minute (same hex-packed as SPH time periods)
+        3038: {'name': 'mod_tou_1_start', 'scale': 1, 'unit': '', 'access': 'RW',
+               'desc': 'TOU Period 1 start: bit15=enable, bit13-14=priority(0=Load,1=Batt,2=Grid), bit8-12=hour, bit0-7=min'},
+        3039: {'name': 'mod_tou_1_end',   'scale': 1, 'unit': '', 'access': 'RW',
+               'desc': 'TOU Period 1 end: bit8-12=hour, bit0-7=min'},
+        3040: {'name': 'mod_tou_2_start', 'scale': 1, 'unit': '', 'access': 'RW',
+               'desc': 'TOU Period 2 start: bit15=enable, bit13-14=priority, bit8-12=hour, bit0-7=min'},
+        3041: {'name': 'mod_tou_2_end',   'scale': 1, 'unit': '', 'access': 'RW',
+               'desc': 'TOU Period 2 end: bit8-12=hour, bit0-7=min'},
+        3042: {'name': 'mod_tou_3_start', 'scale': 1, 'unit': '', 'access': 'RW',
+               'desc': 'TOU Period 3 start: bit15=enable, bit13-14=priority, bit8-12=hour, bit0-7=min'},
+        3043: {'name': 'mod_tou_3_end',   'scale': 1, 'unit': '', 'access': 'RW',
+               'desc': 'TOU Period 3 end: bit8-12=hour, bit0-7=min'},
+        3044: {'name': 'mod_tou_4_start', 'scale': 1, 'unit': '', 'access': 'RW',
+               'desc': 'TOU Period 4 start: bit15=enable, bit13-14=priority, bit8-12=hour, bit0-7=min'},
+        3045: {'name': 'mod_tou_4_end',   'scale': 1, 'unit': '', 'access': 'RW',
+               'desc': 'TOU Period 4 end: bit8-12=hour, bit0-7=min'},
     }
 }
 

@@ -15,6 +15,8 @@ from .const import (
     WRITABLE_REGISTERS,
     CONF_REGISTER_MAP,
     get_device_type_for_control,
+    DEVICE_TYPE_BATTERY,
+    MOD_TOU_PERIODS,
 )
 from .coordinator import GrowattModbusCoordinator
 
@@ -83,10 +85,23 @@ async def async_setup_entry(
         if register_num not in holding_registers:
             continue  # Skip if register not in this profile
 
+        # VPP export limit requires live confirmation that the inverter responds to 30200
+        if control_name == 'vpp_export_limit_enable':
+            if coordinator.data is None or not coordinator.data.vpp_export_limit_available:
+                _LOGGER.debug("Skipping vpp_export_limit_enable: register 30200 not confirmed responsive")
+                continue
+
         entities.append(
             GrowattGenericSelect(coordinator, config_entry, control_name, control_config)
         )
         _LOGGER.info("%s control enabled (register %d found)", control_name, register_num)
+
+    # MOD TL3-XH TOU priority and enable selects (4 priority + 4 enable = 8 entities)
+    if 3038 in holding_registers:
+        for period_def in MOD_TOU_PERIODS:
+            entities.append(GrowattModTouPriority(coordinator, config_entry, period_def))
+            entities.append(GrowattModTouEnable(coordinator, config_entry, period_def))
+        _LOGGER.info("MOD TOU priority/enable controls enabled (8 select entities for 4 periods)")
 
     if entities:
         entry_name = config_entry.data.get("name", config_entry.title)
@@ -522,3 +537,116 @@ class GrowattWitVppTouDefaultModeSelect(CoordinatorEntity, SelectEntity):
 
         except Exception as err:  # noqa: BLE001
             _LOGGER.exception("[WIT-VPP] Failed to set TOU default mode: %s", err)
+
+
+class GrowattModTouPriority(CoordinatorEntity, SelectEntity):
+    """Priority select for one MOD TL3-XH TOU period.
+
+    Extracts bits 13-14 from the period's start register.
+    Write uses read-modify-write to preserve time (bits 0-12) and enable (bit 15).
+    """
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_icon = "mdi:priority-high"
+    _attr_options = ["Load Priority", "Battery Priority", "Grid Priority"]
+
+    _PRIORITY_MAP = {0: "Load Priority", 1: "Battery Priority", 2: "Grid Priority"}
+    _PRIORITY_REVERSE = {"Load Priority": 0, "Battery Priority": 1, "Grid Priority": 2}
+
+    def __init__(self, coordinator, config_entry, period_def: dict) -> None:
+        """Initialize priority select."""
+        super().__init__(coordinator)
+        self._config_entry = config_entry
+        self._period = period_def["period"]
+        self._start_reg = period_def["start_reg"]
+        self._start_field = period_def["start_field"]
+
+        entry_name = config_entry.data.get("name", config_entry.title)
+        self._attr_name = f"{entry_name} TOU Period {self._period} Priority"
+        self._attr_unique_id = f"{config_entry.entry_id}_mod_tou_{self._period}_priority"
+
+    @property
+    def device_info(self):
+        """Return device information."""
+        return self.coordinator.get_device_info(DEVICE_TYPE_BATTERY)
+
+    @property
+    def current_option(self) -> str | None:
+        """Return current priority option."""
+        data = self.coordinator.data
+        if data is None:
+            return None
+        raw = getattr(data, self._start_field, 0)
+        priority = (int(raw) >> 13) & 0x3
+        return self._PRIORITY_MAP.get(priority)
+
+    async def async_select_option(self, option: str) -> None:
+        """Write new priority, preserving time and enable bits."""
+        priority = self._PRIORITY_REVERSE.get(option)
+        if priority is None:
+            return
+        data = self.coordinator.data
+        current_raw = getattr(data, self._start_field, 0) if data else 0
+        new_raw = (int(current_raw) & 0x9FFF) | (priority << 13)
+        success = await self.hass.async_add_executor_job(
+            self.coordinator.modbus_client.write_register, self._start_reg, new_raw
+        )
+        if success:
+            _LOGGER.info("Set MOD TOU period %d priority to %s (raw=0x%04X)", self._period, option, new_raw)
+            await self.coordinator.async_request_refresh()
+        else:
+            _LOGGER.error("Failed to write MOD TOU period %d priority (register %d)", self._period, self._start_reg)
+
+
+class GrowattModTouEnable(CoordinatorEntity, SelectEntity):
+    """Enable/disable select for one MOD TL3-XH TOU period.
+
+    Extracts bit 15 from the period's start register.
+    Write uses read-modify-write to preserve time (bits 0-12) and priority (bits 13-14).
+    """
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_icon = "mdi:toggle-switch-outline"
+    _attr_options = ["Disabled", "Enabled"]
+
+    def __init__(self, coordinator, config_entry, period_def: dict) -> None:
+        """Initialize enable select."""
+        super().__init__(coordinator)
+        self._config_entry = config_entry
+        self._period = period_def["period"]
+        self._start_reg = period_def["start_reg"]
+        self._start_field = period_def["start_field"]
+
+        entry_name = config_entry.data.get("name", config_entry.title)
+        self._attr_name = f"{entry_name} TOU Period {self._period} Enable"
+        self._attr_unique_id = f"{config_entry.entry_id}_mod_tou_{self._period}_enable"
+
+    @property
+    def device_info(self):
+        """Return device information."""
+        return self.coordinator.get_device_info(DEVICE_TYPE_BATTERY)
+
+    @property
+    def current_option(self) -> str | None:
+        """Return current enable state."""
+        data = self.coordinator.data
+        if data is None:
+            return None
+        raw = getattr(data, self._start_field, 0)
+        enabled = (int(raw) >> 15) & 0x1
+        return "Enabled" if enabled else "Disabled"
+
+    async def async_select_option(self, option: str) -> None:
+        """Write new enable state, preserving time and priority bits."""
+        enable = 1 if option == "Enabled" else 0
+        data = self.coordinator.data
+        current_raw = getattr(data, self._start_field, 0) if data else 0
+        new_raw = (int(current_raw) & 0x7FFF) | (enable << 15)
+        success = await self.hass.async_add_executor_job(
+            self.coordinator.modbus_client.write_register, self._start_reg, new_raw
+        )
+        if success:
+            _LOGGER.info("Set MOD TOU period %d enable to %s (raw=0x%04X)", self._period, option, new_raw)
+            await self.coordinator.async_request_refresh()
+        else:
+            _LOGGER.error("Failed to write MOD TOU period %d enable (register %d)", self._period, self._start_reg)
