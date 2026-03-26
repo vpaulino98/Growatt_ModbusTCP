@@ -7,12 +7,14 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import entity_registry as er
 
 
 from .const import (
     DOMAIN,
     CONF_DEVICE_STRUCTURE_VERSION,
     CURRENT_DEVICE_STRUCTURE_VERSION,
+    WRITABLE_REGISTERS,
 )
 from .coordinator import GrowattModbusCoordinator
 from .diagnostic import async_setup_services
@@ -59,9 +61,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "Inverter (with system controls), Solar, Grid, Load, and Battery (if present)"
         )
 
+    # Remove stale number entities for time_period start/end controls (migrated to TimeEntity in v0.6.4)
+    entity_registry = er.async_get(hass)
+    stale_time_controls = {k for k in WRITABLE_REGISTERS if 'time_period' in k and k.endswith(('_start', '_end'))}
+    for control_name in stale_time_controls:
+        old_entity_id = entity_registry.async_get_entity_id("number", DOMAIN, f"{entry.entry_id}_{control_name}")
+        if old_entity_id:
+            _LOGGER.info("Removing stale number entity %s (migrated to time entity)", old_entity_id)
+            entity_registry.async_remove(old_entity_id)
+
     coordinator = GrowattModbusCoordinator(hass, entry)
 
     await coordinator.async_config_entry_first_refresh()
+
+    # Remove stale VPP export limit entities if the inverter doesn't respond to these registers
+    if coordinator.data is not None and not coordinator.data.vpp_export_limit_available:
+        entity_registry = er.async_get(hass)
+        for control_name in ('vpp_export_limit_enable', 'vpp_export_limit_power_rate'):
+            stale_uid = f"{entry.entry_id}_{control_name}"
+            for platform in ('select', 'number'):
+                stale_eid = entity_registry.async_get_entity_id(platform, DOMAIN, stale_uid)
+                if stale_eid:
+                    _LOGGER.info("Removing stale VPP export limit entity %s (register 30200/30201 not responsive)", stale_eid)
+                    entity_registry.async_remove(stale_eid)
 
     hass.data[DOMAIN][entry.entry_id] = coordinator
 

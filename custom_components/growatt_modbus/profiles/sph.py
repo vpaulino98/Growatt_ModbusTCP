@@ -106,10 +106,10 @@ SPH_3000_6000 = {
         # Time Period 1 Control (for time-based charging/discharging)
         1100: {'name': 'time_period_1_start', 'scale': 1, 'unit': '', 'access': 'RW',
                'valid_range': (0, 2359),
-               'desc': 'Period 1 start time in HHMM format (e.g., 530 = 05:30, 2300 = 23:00)'},
+               'desc': 'Period 1 start time (hex-packed: hours*256+minutes, e.g. 06:00 = 0x0600 = 1536)'},
         1101: {'name': 'time_period_1_end', 'scale': 1, 'unit': '', 'access': 'RW',
                'valid_range': (0, 2359),
-               'desc': 'Period 1 end time in HHMM format (e.g., 530 = 05:30, 2300 = 23:00)'},
+               'desc': 'Period 1 end time (hex-packed: hours*256+minutes, e.g. 22:00 = 0x1600 = 5632)'},
         1102: {'name': 'time_period_1_enable', 'scale': 1, 'unit': '', 'access': 'RW',
                'desc': 'Enable time period 1',
                'values': {
@@ -120,10 +120,10 @@ SPH_3000_6000 = {
         # Time Period 2 Control
         1103: {'name': 'time_period_2_start', 'scale': 1, 'unit': '', 'access': 'RW',
                'valid_range': (0, 2359),
-               'desc': 'Period 2 start time in HHMM format'},
+               'desc': 'Period 2 start time (hex-packed: hours*256+minutes)'},
         1104: {'name': 'time_period_2_end', 'scale': 1, 'unit': '', 'access': 'RW',
                'valid_range': (0, 2359),
-               'desc': 'Period 2 end time in HHMM format'},
+               'desc': 'Period 2 end time (hex-packed: hours*256+minutes)'},
         1105: {'name': 'time_period_2_enable', 'scale': 1, 'unit': '', 'access': 'RW',
                'desc': 'Enable time period 2',
                'values': {
@@ -134,10 +134,10 @@ SPH_3000_6000 = {
         # Time Period 3 Control
         1106: {'name': 'time_period_3_start', 'scale': 1, 'unit': '', 'access': 'RW',
                'valid_range': (0, 2359),
-               'desc': 'Period 3 start time in HHMM format'},
+               'desc': 'Period 3 start time (hex-packed: hours*256+minutes)'},
         1107: {'name': 'time_period_3_end', 'scale': 1, 'unit': '', 'access': 'RW',
                'valid_range': (0, 2359),
-               'desc': 'Period 3 end time in HHMM format'},
+               'desc': 'Period 3 end time (hex-packed: hours*256+minutes)'},
         1108: {'name': 'time_period_3_enable', 'scale': 1, 'unit': '', 'access': 'RW',
                'desc': 'Enable time period 3',
                'values': {
@@ -252,10 +252,10 @@ SPH_7000_10000 = {
         # Time Period 1 Control (for time-based charging/discharging)
         1100: {'name': 'time_period_1_start', 'scale': 1, 'unit': '', 'access': 'RW',
                'valid_range': (0, 2359),
-               'desc': 'Period 1 start time in HHMM format (e.g., 530 = 05:30, 2300 = 23:00)'},
+               'desc': 'Period 1 start time (hex-packed: hours*256+minutes, e.g. 06:00 = 0x0600 = 1536)'},
         1101: {'name': 'time_period_1_end', 'scale': 1, 'unit': '', 'access': 'RW',
                'valid_range': (0, 2359),
-               'desc': 'Period 1 end time in HHMM format (e.g., 530 = 05:30, 2300 = 23:00)'},
+               'desc': 'Period 1 end time (hex-packed: hours*256+minutes, e.g. 22:00 = 0x1600 = 5632)'},
         1102: {'name': 'time_period_1_enable', 'scale': 1, 'unit': '', 'access': 'RW',
                'desc': 'Enable time period 1',
                'values': {
@@ -266,10 +266,10 @@ SPH_7000_10000 = {
         # Time Period 2 Control
         1103: {'name': 'time_period_2_start', 'scale': 1, 'unit': '', 'access': 'RW',
                'valid_range': (0, 2359),
-               'desc': 'Period 2 start time in HHMM format'},
+               'desc': 'Period 2 start time (hex-packed: hours*256+minutes)'},
         1104: {'name': 'time_period_2_end', 'scale': 1, 'unit': '', 'access': 'RW',
                'valid_range': (0, 2359),
-               'desc': 'Period 2 end time in HHMM format'},
+               'desc': 'Period 2 end time (hex-packed: hours*256+minutes)'},
         1105: {'name': 'time_period_2_enable', 'scale': 1, 'unit': '', 'access': 'RW',
                'desc': 'Enable time period 2',
                'values': {
@@ -280,10 +280,10 @@ SPH_7000_10000 = {
         # Time Period 3 Control
         1106: {'name': 'time_period_3_start', 'scale': 1, 'unit': '', 'access': 'RW',
                'valid_range': (0, 2359),
-               'desc': 'Period 3 start time in HHMM format'},
+               'desc': 'Period 3 start time (hex-packed: hours*256+minutes)'},
         1107: {'name': 'time_period_3_end', 'scale': 1, 'unit': '', 'access': 'RW',
                'valid_range': (0, 2359),
-               'desc': 'Period 3 end time in HHMM format'},
+               'desc': 'Period 3 end time (hex-packed: hours*256+minutes)'},
         1108: {'name': 'time_period_3_enable', 'scale': 1, 'unit': '', 'access': 'RW',
                'desc': 'Enable time period 3',
                'values': {

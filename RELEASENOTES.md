@@ -4,6 +4,91 @@
 
 ---
 
+## v0.6.5
+
+- #206 · #214 · #204 · #18 · #131 · VPP sensor gating · Scanner improvements
+
+### 🔧 Fix — Energy (Today/Total) Values Dropped to Zero When Inverter Offline (Issue #206 Regression)
+
+After v0.6.4, energy sensors (`Energy Today`, `Energy Total`, etc.) showed `0` or `unavailable` as soon as the inverter went offline — even mid-day when the inverter was just briefly unreachable.
+
+**Root cause:** A prior commit changed offline behavior for daily/lifetime energy sensors from `retain` to `unavailable` to prevent HA statistics outliers. However, the wake-up debounce logic added since then already prevents stale data from reaching HA, making the `unavailable` change unnecessary and causing the regression.
+
+**Fix:** Reverted `daily_total` and `lifetime_total` offline behavior back to `retain`. The midnight reset + 15-minute wake-up debounce window handle the statistics edge cases that prompted the original change.
+
+---
+
+### 🔧 Fix — Stale `number` Time Period Entities Persist After Upgrade (Issue #214)
+
+After upgrading from pre-v0.6.4, the old `number` platform entities for `time_period_*_start` and `time_period_*_end` remained in the HA entity registry alongside the new `time` platform entities, causing duplicates.
+
+**Fix:** Added entity registry migration in `__init__.py` that automatically removes stale `number` platform entities for `time_period_*_start/end` on the next HA restart.
+
+---
+
+### 🔧 Fix — VPP Export Limit Controls Appear on Non-VPP Inverters
+
+MIN TL-X (and other non-VPP inverters) showed `VPP Export Limit Enable` and `VPP Export Limit Power Rate` controls even though the hardware does not support these registers.
+
+**Root cause:** MIN V2.01 profiles define holding registers 30200–30201. The select/number platform setup creates entities for any register present in the profile, without verifying the hardware responds.
+
+**Fix:** The coordinator now tracks whether registers 30200–30201 actually responded during the first data read (`vpp_export_limit_available` flag). Entity creation is gated on this flag. A migration in `__init__.py` removes stale entities on the next restart for inverters where the registers are not responsive.
+
+---
+
+### ✨ New — MOD TL3-XH TOU Schedule Controls (Issue #131)
+
+**MOD Hybrid (6-15kW)** users can now set Time-of-Use schedule periods directly from Home Assistant. 16 new entities per inverter:
+
+- **4 × Time Period Start** (HH:MM time picker) — periods 1–4
+- **4 × Time Period End** (HH:MM time picker) — periods 1–4
+- **4 × Priority** (select: Load Priority / Battery Priority / Grid Priority)
+- **4 × Enable** (select: Enabled / Disabled)
+
+Uses MOD TL3-XH holding registers 3038–3045 (FC04). Start registers use bit-packed encoding: `bit15=enable, bit13-14=priority, bit8-12=hour, bit0-7=minute`. Writes use read-modify-write to preserve priority/enable bits when adjusting time.
+
+---
+
+### 🔧 Fix — SPF Battery Power and Energy Sensors Showing Zero (Issues #204, #18)
+
+**SPF** off-grid inverter users reported battery power, charge/discharge energy totals, and AC input power all showing `0` even while the inverter was active.
+
+**Root causes and fixes:**
+
+1. **Offline behavior regression (issue #206 — already noted above):** `battery_charge_total`, `battery_discharge_total` went unavailable when offline. Fixed by reverting to `retain`.
+
+2. **Missing offline behavior for SPF-specific sensors:** `ac_charge_energy_total`, `ac_discharge_energy_total`, and `generator_discharge_total` were not classified in `SENSOR_TYPES`, defaulting to `diagnostic` behavior (unavailable offline) instead of `lifetime_total` (retain). Similarly, `ac_input_power`, `ac_apparent_power`, and `load_power` were not classified as `power` sensors, so they went unavailable instead of `0` when offline. **Fixed:** Added all missing entries to the correct `SENSOR_TYPES` categories.
+
+3. **Battery power incorrectly zeroed when SOC > 0:** The 10V voltage threshold guard (introduced to prevent garbage readings from a disconnected battery) also blocked power readings for connected batteries that report `0V` in certain modes (e.g. bypass/standby on some SPF firmware). The guard now requires **both** voltage `< 10V` **and** SOC `< 5%` before zeroing battery power — if SOC > 5%, the battery is present and power registers are trusted.
+
+---
+
+### ✨ New — Universal Scanner: VPP Control Ranges + Group Selection
+
+The scanner service now supports scanning VPP control holding registers (30100–30499):
+
+- `VPP System Control 30100–30129`
+- `VPP AC Control 30150–30216`
+- `VPP Battery Control 30300–30499`
+
+Each scan range group can be individually enabled/disabled via service parameters:
+`scan_legacy`, `scan_storage`, `scan_mod_extended`, `scan_wit`, `scan_vpp_control`, `scan_vpp_data`
+
+---
+
+### ✨ New — Universal Scanner: MOD Holding Ranges + Extended 3250–3374
+
+The register scanner now includes MOD TL3-XH FC04 (holding) ranges that were previously missing:
+
+- `MOD Holding 3000–3124` — includes TOU registers 3038–3045
+- `MOD Holding 3125–3249`
+- `MOD Extended Input 3250–3374`
+- `MOD Extended Holding 3250–3374`
+
+These appear in the CSV output when `Scan MIN/MOD Extended Registers` is enabled.
+
+---
+
 ## v0.6.4
 
 - #204 · #214

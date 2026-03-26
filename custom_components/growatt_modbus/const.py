@@ -75,6 +75,8 @@ SENSOR_TYPES = {
         'battery_power', 'battery_charge_power', 'battery_discharge_power',
         # Three-phase power sensors
         'ac_power_r', 'ac_power_s', 'ac_power_t',
+        # SPF Off-Grid power sensors
+        'ac_input_power', 'ac_apparent_power', 'load_power',
     ],
 
     # Daily total sensors - retain until midnight, then reset
@@ -86,6 +88,8 @@ SENSOR_TYPES = {
         # SPF Off-Grid daily battery sensors
         'ac_charge_energy_today', 'ac_discharge_energy_today',
         'op_discharge_energy_today',
+        # SPF generator daily energy
+        'generator_discharge_today',
     ],
 
     # Lifetime total sensors - always retain last value
@@ -96,6 +100,10 @@ SENSOR_TYPES = {
         'battery_charge_total', 'battery_discharge_total',
         # SPF Off-Grid lifetime battery sensors
         'op_discharge_energy_total',
+        # SPF/WIT AC charge/discharge lifetime totals
+        'ac_charge_energy_total', 'ac_discharge_energy_total',
+        # SPF generator lifetime energy
+        'generator_discharge_total',
     ],
 
     # Diagnostic sensors - go unavailable when offline
@@ -377,20 +385,20 @@ WRITABLE_REGISTERS = {
         'desc': 'System enable control (SPH HU models)'
     },
 
-    # Time Period Controls (HHMM format: 530 = 05:30, 2300 = 23:00)
+    # Time Period Controls (hex-packed: hours*256 + minutes, e.g. 06:00 = 0x0600 = 1536)
     'time_period_1_start': {
         'register': 1100,
         'scale': 1,
-        'valid_range': (0, 2359),
+        'valid_range': (0, 5947),
         'unit': '',
-        'desc': 'Period 1 start time (HHMM format: e.g., 530 = 05:30)'
+        'desc': 'Period 1 start time (hex-packed: hours*256+minutes, e.g. 06:00 = 0x0600 = 1536)'
     },
     'time_period_1_end': {
         'register': 1101,
         'scale': 1,
-        'valid_range': (0, 2359),
+        'valid_range': (0, 5947),
         'unit': '',
-        'desc': 'Period 1 end time (HHMM format: e.g., 2300 = 23:00)'
+        'desc': 'Period 1 end time (hex-packed: hours*256+minutes, e.g. 22:00 = 0x1600 = 5632)'
     },
     'time_period_1_enable': {
         'register': 1102,
@@ -405,16 +413,16 @@ WRITABLE_REGISTERS = {
     'time_period_2_start': {
         'register': 1103,
         'scale': 1,
-        'valid_range': (0, 2359),
+        'valid_range': (0, 5947),
         'unit': '',
-        'desc': 'Period 2 start time (HHMM format)'
+        'desc': 'Period 2 start time (hex-packed: hours*256+minutes)'
     },
     'time_period_2_end': {
         'register': 1104,
         'scale': 1,
-        'valid_range': (0, 2359),
+        'valid_range': (0, 5947),
         'unit': '',
-        'desc': 'Period 2 end time (HHMM format)'
+        'desc': 'Period 2 end time (hex-packed: hours*256+minutes)'
     },
     'time_period_2_enable': {
         'register': 1105,
@@ -429,16 +437,16 @@ WRITABLE_REGISTERS = {
     'time_period_3_start': {
         'register': 1106,
         'scale': 1,
-        'valid_range': (0, 2359),
+        'valid_range': (0, 5947),
         'unit': '',
-        'desc': 'Period 3 start time (HHMM format)'
+        'desc': 'Period 3 start time (hex-packed: hours*256+minutes)'
     },
     'time_period_3_end': {
         'register': 1107,
         'scale': 1,
-        'valid_range': (0, 2359),
+        'valid_range': (0, 5947),
         'unit': '',
-        'desc': 'Period 3 end time (HHMM format)'
+        'desc': 'Period 3 end time (hex-packed: hours*256+minutes)'
     },
     'time_period_3_enable': {
         'register': 1108,
@@ -455,8 +463,8 @@ WRITABLE_REGISTERS = {
 # Sensor offline behavior mapping
 SENSOR_OFFLINE_BEHAVIOR = {
     'power': 0,                 # Power sensors go to 0W
-    'daily_total': None,        # Daily totals go unavailable when offline (fixes HA statistics outliers)
-    'lifetime_total': None,     # Lifetime totals go unavailable when offline (fixes HA statistics outliers)
+    'daily_total': 'retain',    # Daily totals retain last value when offline (midnight reset + wake-up debounce handles new-day rollover)
+    'lifetime_total': 'retain', # Lifetime totals always retain — they never reset
     'diagnostic': None,         # Diagnostic sensors go unavailable
     'status': 'offline',        # Status shows "offline"
 }
@@ -636,6 +644,16 @@ def get_device_type_for_control(control_name: str) -> str:
         return DEVICE_TYPE_SOLAR
 
     return DEVICE_TYPE_INVERTER
+
+
+# MOD TL3-XH TOU period register definitions (FC04 holding registers 3038-3045)
+# Used by time.py (time pickers) and select.py (priority/enable selects)
+MOD_TOU_PERIODS = [
+    {"period": 1, "start_reg": 3038, "end_reg": 3039, "start_field": "mod_tou_1_start", "end_field": "mod_tou_1_end"},
+    {"period": 2, "start_reg": 3040, "end_reg": 3041, "start_field": "mod_tou_2_start", "end_field": "mod_tou_2_end"},
+    {"period": 3, "start_reg": 3042, "end_reg": 3043, "start_field": "mod_tou_3_start", "end_field": "mod_tou_3_end"},
+    {"period": 4, "start_reg": 3044, "end_reg": 3045, "start_field": "mod_tou_4_start", "end_field": "mod_tou_4_end"},
+]
 
 
 # ============================================================================

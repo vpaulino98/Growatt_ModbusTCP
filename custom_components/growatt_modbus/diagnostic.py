@@ -55,17 +55,31 @@ SERVICE_GET_REGISTER_DATA = "get_register_data"
 # Universal scan ranges - covers all Grid-Tied Growatt series
 # Split into chunks of max 125 registers to respect Modbus limits
 UNIVERSAL_SCAN_RANGES = [
-    {"name": "Base Range 0-124", "start": 0, "count": 125},
-    {"name": "Extended Range 125-249", "start": 125, "count": 125},
-    {"name": "Storage Range 1000-1124", "start": 1000, "count": 125},
-    {"name": "MIN/MOD Range 3000-3124", "start": 3000, "count": 125},
-    {"name": "MOD Extended 3125-3249", "start": 3125, "count": 125},
-    {"name": "WIT/WIS Battery Range 8000-8124", "start": 8000, "count": 125},
-    # VPP Protocol V2.01 ranges (31000+)
-    {"name": "VPP Status/PV: 31000-31099", "start": 31000, "count": 100},  # Equipment status, PV data, faults
-    {"name": "VPP AC/Grid/Load: 31100-31199", "start": 31100, "count": 100},  # AC output, meter/grid power (31112), load power (31118), energy, temps
-    {"name": "VPP Battery 1: 31200-31299", "start": 31200, "count": 100},  # Battery cluster 1 data
-    {"name": "VPP Battery 2: 31300-31399", "start": 31300, "count": 100},  # Battery cluster 2 data (optional)
+    # Legacy protocol ranges (all grid-tied/hybrid models)
+    {"name": "Base Range 0-124",         "start": 0,     "count": 125, "group": "legacy"},
+    {"name": "Extended Range 125-249",   "start": 125,   "count": 125, "group": "legacy"},
+    # Battery/storage range (SPH, SPM, MIN battery models)
+    {"name": "Storage Range 1000-1124",  "start": 1000,  "count": 125, "group": "storage"},
+    # MIN/MOD extended data ranges (input registers FC03)
+    {"name": "MIN/MOD Range 3000-3124",         "start": 3000, "count": 125, "group": "mod_extended"},
+    {"name": "MOD Extended 3125-3249",          "start": 3125, "count": 125, "group": "mod_extended"},
+    {"name": "MOD Extended Input 3250-3374",    "start": 3250, "count": 125, "group": "mod_extended"},
+    # MOD TL3-XH holding registers (FC04) — includes TOU schedule (3038-3045) and other settings
+    {"name": "MOD Holding 3000-3124",           "start": 3000, "count": 125, "group": "mod_extended", "register_type": "holding"},
+    {"name": "MOD Holding 3125-3249",           "start": 3125, "count": 125, "group": "mod_extended", "register_type": "holding"},
+    {"name": "MOD Extended Holding 3250-3374",  "start": 3250, "count": 125, "group": "mod_extended", "register_type": "holding"},
+    # WIT/WIS battery range
+    {"name": "WIT/WIS Battery Range 8000-8124", "start": 8000, "count": 125, "group": "wit"},
+    # VPP Control holding registers (30100-30499) — system/AC/battery control settings
+    {"name": "VPP System Control 30100-30129",  "start": 30100, "count": 30,  "group": "vpp_control", "register_type": "holding"},
+    {"name": "VPP AC Control 30150-30216",      "start": 30150, "count": 67,  "group": "vpp_control", "register_type": "holding"},
+    {"name": "VPP Battery Control 30300-30424", "start": 30300, "count": 125, "group": "vpp_control", "register_type": "holding"},
+    {"name": "VPP Battery Control 30425-30499", "start": 30425, "count": 75,  "group": "vpp_control", "register_type": "holding"},
+    # VPP Protocol V2.01 data ranges (31000+)
+    {"name": "VPP Status/PV: 31000-31099",       "start": 31000, "count": 100, "group": "vpp_data"},  # Equipment status, PV data, faults
+    {"name": "VPP AC/Grid/Load: 31100-31199",    "start": 31100, "count": 100, "group": "vpp_data"},  # AC output, meter/grid power, load power, energy, temps
+    {"name": "VPP Battery 1: 31200-31299",       "start": 31200, "count": 100, "group": "vpp_data"},  # Battery cluster 1 data
+    {"name": "VPP Battery 2: 31300-31399",       "start": 31300, "count": 100, "group": "vpp_data"},  # Battery cluster 2 data (optional)
 ]
 
 # OffGrid scan ranges - SAFE for SPF series (prevents power resets!)
@@ -96,6 +110,13 @@ SERVICE_EXPORT_DUMP_SCHEMA = vol.Schema(
         vol.Optional("slave_id", default=1): vol.All(vol.Coerce(int), vol.Range(min=1, max=247)),
         vol.Optional("notify", default=True): cv.boolean,
         vol.Optional("offgrid_mode", default=False): cv.boolean,  # CRITICAL: Enable for SPF to prevent power reset
+        # Range group selection (all enabled by default)
+        vol.Optional("scan_legacy",       default=True): cv.boolean,  # Base 0-249 (all models)
+        vol.Optional("scan_storage",      default=True): cv.boolean,  # Storage 1000-1124 (SPH/MIN battery)
+        vol.Optional("scan_mod_extended", default=True): cv.boolean,  # MIN/MOD 3000-3249
+        vol.Optional("scan_wit",          default=True): cv.boolean,  # WIT/WIS 8000-8124
+        vol.Optional("scan_vpp_control",  default=True): cv.boolean,  # VPP control 30100-30499
+        vol.Optional("scan_vpp_data",     default=True): cv.boolean,  # VPP data 31000-31399
     }
 )
 
@@ -316,6 +337,15 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         send_notification = call.data.get("notify", True)
         offgrid_mode = call.data.get("offgrid_mode", False)
 
+        # Build enabled scan groups from boolean flags
+        enabled_groups = set()
+        if call.data.get("scan_legacy", True):       enabled_groups.add("legacy")
+        if call.data.get("scan_storage", True):      enabled_groups.add("storage")
+        if call.data.get("scan_mod_extended", True): enabled_groups.add("mod_extended")
+        if call.data.get("scan_wit", True):          enabled_groups.add("wit")
+        if call.data.get("scan_vpp_control", True):  enabled_groups.add("vpp_control")
+        if call.data.get("scan_vpp_data", True):     enabled_groups.add("vpp_data")
+
         # Validate required parameters based on connection type
         if connection_type == "tcp":
             if not host:
@@ -337,7 +367,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
 
         # Run export in executor - coordinator will be auto-detected based on connection parameters
         result = await hass.async_add_executor_job(
-            _export_registers_to_csv, hass, connection_type, host, port, device, baudrate, slave_id, offgrid_mode
+            _export_registers_to_csv, hass, connection_type, host, port, device, baudrate, slave_id, offgrid_mode, enabled_groups
         )
         
         if result["success"]:
@@ -1571,7 +1601,7 @@ def _detect_inverter_model(register_data: Dict[int, Dict[str, Any]]) -> Dict[str
     return detection
 
 
-def _export_registers_to_csv(hass, connection_type: str, host: str, port: int, device: str, baudrate: int, slave_id: int, offgrid_mode: bool = False) -> dict:
+def _export_registers_to_csv(hass, connection_type: str, host: str, port: int, device: str, baudrate: int, slave_id: int, offgrid_mode: bool = False, enabled_groups: set = None) -> dict:
     """
     Export all registers to CSV file with auto-detection (blocking).
 
@@ -1717,17 +1747,23 @@ def _export_registers_to_csv(hass, connection_type: str, host: str, port: int, d
             _LOGGER.info("⚠️ Skipping VPP identification registers (OffGrid mode)")
             range_responses["VPP Identification (SKIPPED - OffGrid mode)"] = 0
 
-        # THEN: Scan input register ranges - use safe ranges for OffGrid mode
-        scan_ranges = OFFGRID_SCAN_RANGES if offgrid_mode else UNIVERSAL_SCAN_RANGES
+        # THEN: Scan register ranges - use safe ranges for OffGrid mode, or filter by enabled groups
+        if offgrid_mode:
+            scan_ranges = OFFGRID_SCAN_RANGES
+        else:
+            all_groups = {"legacy", "storage", "mod_extended", "wit", "vpp_control", "vpp_data"}
+            active_groups = enabled_groups if enabled_groups is not None else all_groups
+            scan_ranges = [r for r in UNIVERSAL_SCAN_RANGES if r.get("group", "legacy") in active_groups]
 
         for range_config in scan_ranges:
             range_name = range_config["name"]
             start = range_config["start"]
             count = range_config["count"]
+            reg_type = range_config.get("register_type", "input")
 
-            _LOGGER.info(f"Scanning {range_name}...")
+            _LOGGER.info(f"Scanning {range_name} ({reg_type})...")
 
-            registers = _read_registers_chunked(client, start, count, slave_id, chunk_size=50, register_type='input')
+            registers = _read_registers_chunked(client, start, count, slave_id, chunk_size=50, register_type=reg_type)
 
             if registers:
                 all_register_data.update(registers)
