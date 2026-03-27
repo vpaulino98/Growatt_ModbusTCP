@@ -463,8 +463,8 @@ WRITABLE_REGISTERS = {
 # Sensor offline behavior mapping
 SENSOR_OFFLINE_BEHAVIOR = {
     'power': 0,                 # Power sensors go to 0W
-    'daily_total': 'retain',    # Daily totals retain last value when offline (midnight reset + wake-up debounce handles new-day rollover)
-    'lifetime_total': 'retain', # Lifetime totals always retain — they never reset
+    'daily_total': None,        # Unavailable when offline — avoids retaining 0.0 initial state; HA resets total_increasing baseline after unavailable
+    'lifetime_total': None,     # Unavailable when offline — same reasoning; avoids total_increasing warnings from 32-bit register jitter
     'diagnostic': None,         # Diagnostic sensors go unavailable
     'status': 'offline',        # Status shows "offline"
 }

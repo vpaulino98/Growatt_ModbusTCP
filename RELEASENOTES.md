@@ -4,17 +4,19 @@
 
 ---
 
-## v0.6.5
+## v0.6.6
 
 - #206 · #214 · #204 · #18 · #131 · VPP sensor gating · Scanner improvements
 
-### 🔧 Fix — Energy (Today/Total) Values Dropped to Zero When Inverter Offline (Issue #206 Regression)
+### 🔧 Fix — Energy (Today/Total) Values Showing Zero When Inverter Offline (Issue #206)
 
-After v0.6.4, energy sensors (`Energy Today`, `Energy Total`, etc.) showed `0` or `unavailable` as soon as the inverter went offline — even mid-day when the inverter was just briefly unreachable.
+Energy sensors (`Energy Today`, `Energy Total`, `Battery Charge Total`, etc.) show `0` when the inverter is offline — particularly after a HA restart when the inverter is already offline.
 
-**Root cause:** A prior commit changed offline behavior for daily/lifetime energy sensors from `retain` to `unavailable` to prevent HA statistics outliers. However, the wake-up debounce logic added since then already prevents stale data from reaching HA, making the `unavailable` change unnecessary and causing the regression.
+**Root cause:** The coordinator's `GrowattData` dataclass initialises all fields to `0.0`. If a `retain` offline behavior is set and the integration restarts while the inverter is offline, there is no first successful read to update the retained value — so `0.0` is retained and displayed.
 
-**Fix:** Reverted `daily_total` and `lifetime_total` offline behavior back to `retain`. The midnight reset + 15-minute wake-up debounce window handle the statistics edge cases that prompted the original change.
+A secondary effect of `retain`: HA tracks `total_increasing` sensors continuously. Inverter energy registers fluctuate by ±0.1 kWh (32-bit register pair read-timing jitter), causing HA to log `total_increasing` violation warnings. With `unavailable`, HA resets its comparison baseline after each gap — jitter is never flagged.
+
+**Fix:** Both `daily_total` and `lifetime_total` offline behavior set to `unavailable`. Sensors show `unavailable` (not `0`) when the inverter is offline or after a restart before the first successful read. The HA Energy Dashboard shows this as a gap — statistically correct for offline periods. `total_increasing` warnings stop appearing.
 
 ---
 
