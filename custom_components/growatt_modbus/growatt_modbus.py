@@ -112,6 +112,15 @@ def _format_modbus_error(result) -> str:
     return " | ".join(error_parts) if error_parts else str(result)
 
 
+# =============================================================================
+# Write verification constants (cloud override detection)
+# =============================================================================
+
+WRITE_VERIFY_DELAY = 0.5           # seconds — delay before read-back after write
+WRITE_VERIFY_MAX_RETRIES = 3       # maximum write+verify attempts
+WRITE_VERIFY_RETRY_DELAY = 1.5     # seconds — delay between retry attempts
+
+
 @dataclass
 class GrowattData:
     """Container for Growatt inverter data"""
@@ -1424,6 +1433,72 @@ class GrowattModbus:
             error_msg = f"Exception: {type(e).__name__}: {e}"
             logger.error(f"[WRITE] {error_msg}")
             raise ModbusWriteError(register, [value], error_msg)
+
+    def write_register_verified(self, register: int, value: int) -> tuple:
+        """Write a holding register with read-back verification and retry.
+
+        After each write, reads the register back to confirm the value stuck.
+        If the read-back differs (e.g. cloud override via ShineWiFi dongle),
+        retries up to WRITE_VERIFY_MAX_RETRIES times.
+
+        Returns:
+            tuple of (write_success: bool, value_verified: bool):
+            - (True, True)   — write succeeded and read-back confirmed
+            - (True, False)  — write succeeded but read-back differs (cloud override)
+            - (False, False) — write itself failed (Modbus error)
+        """
+        for attempt in range(WRITE_VERIFY_MAX_RETRIES):
+            try:
+                self.write_register(register, value)
+            except ModbusWriteError:
+                if attempt == 0:
+                    raise  # First attempt failure is a real error
+                logger.warning(
+                    "[WRITE VERIFY] Retry %d/%d for register %d failed (Modbus error)",
+                    attempt + 1, WRITE_VERIFY_MAX_RETRIES, register,
+                )
+                return (False, False)
+
+            # Wait for inverter to commit the value
+            time.sleep(WRITE_VERIFY_DELAY)
+
+            # Read back to verify
+            read_back = self.read_holding_registers(register, 1)
+            if read_back is None:
+                logger.debug(
+                    "[WRITE VERIFY] Could not read back register %d (comm error) — treating as unverifiable",
+                    register,
+                )
+                return (True, True)  # Don't fail write on read error
+
+            if read_back[0] == value:
+                if attempt > 0:
+                    logger.info(
+                        "[WRITE VERIFY] Register %d verified on retry %d (value=%d)",
+                        register, attempt + 1, value,
+                    )
+                else:
+                    logger.debug("[WRITE VERIFY] Register %d verified (value=%d)", register, value)
+                return (True, True)
+
+            # Mismatch — value didn't stick
+            logger.warning(
+                "[WRITE VERIFY] Register %d: wrote %d but read back %d (attempt %d/%d). "
+                "Possible cloud override via ShineWiFi dongle.",
+                register, value, read_back[0], attempt + 1, WRITE_VERIFY_MAX_RETRIES,
+            )
+
+            if attempt < WRITE_VERIFY_MAX_RETRIES - 1:
+                time.sleep(WRITE_VERIFY_RETRY_DELAY)
+
+        # All retries exhausted — value keeps reverting
+        logger.error(
+            "[WRITE VERIFY] Register %d: value %d was overridden %d times. "
+            "The Growatt cloud (ShineWiFi dongle) is likely overwriting local Modbus writes. "
+            "To fix: disconnect the ShineWiFi dongle or disable cloud control in the Growatt app.",
+            register, value, WRITE_VERIFY_MAX_RETRIES,
+        )
+        return (True, False)
 
     def write_registers(self, register: int, values: list) -> bool:
         """

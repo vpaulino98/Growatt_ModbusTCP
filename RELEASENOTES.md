@@ -4,17 +4,51 @@
 
 ---
 
-## v0.6.5
+## v0.6.6b2
 
-- #206 · #214 · #204 · #18 · #131 · VPP sensor gating · Scanner improvements
+- #206 · #212 · #214 · #204 · #18 · #131 · VPP sensor gating · Scanner improvements · Write verification · Cloud override detection · SPE profile
 
-### 🔧 Fix — Energy (Today/Total) Values Dropped to Zero When Inverter Offline (Issue #206 Regression)
+### ✨ New — SPE 8000-12000 ES Profile (Issue #212)
 
-After v0.6.4, energy sensors (`Energy Today`, `Energy Total`, etc.) showed `0` or `unavailable` as soon as the inverter went offline — even mid-day when the inverter was just briefly unreachable.
+Added support for the **SPE 8000-12000 ES** single-phase hybrid inverter. Register scan analysis confirmed the SPE uses the same Modbus register protocol as the SPF series (registers 0-97) despite being a grid-tied hybrid with peak shaving capability.
 
-**Root cause:** A prior commit changed offline behavior for daily/lifetime energy sensors from `retain` to `unavailable` to prevent HA statistics outliers. However, the wake-up debounce logic added since then already prevents stale data from reaching HA, making the `unavailable` change unnecessary and causing the regression.
+**Features:** Dual MPPT trackers, battery storage, grid-tied peak shaving, parallel operation support (up to 108kW), dual outputs for smart load management.
 
-**Fix:** Reverted `daily_total` and `lifetime_total` offline behavior back to `retain`. The midnight reset + 15-minute wake-up debounce window handle the statistics edge cases that prompted the original change.
+**How it was identified:** Systematic comparison of a nighttime register scan against all known profiles. 15+ registers matched the SPF layout perfectly — battery voltage (53.67V at ×0.01 scale), SOC (97%), AC voltages (230.8V/231.0V), frequencies (49.99/50.02Hz), temperatures, and a fully consistent power balance (AC input 4280W ≈ Load 3157W + AC charge 1067W).
+
+**Auto-detection:** Model name patterns (SPE8000, SPE10000, SPE12000). Manual selection available as "SPE (8-12kW)" in config flow.
+
+**Affected files:** New `profiles/spe.py`, updated `profiles/__init__.py`, `device_profiles.py`, `auto_detection.py`.
+
+### ✨ New — Write Verification & Cloud Override Detection (Issue #214)
+
+Control writes (priority mode, time schedules, export limits, etc.) now include **read-back verification** with automatic retry. After writing a register, the integration reads it back to confirm the value stuck. If the value reverts (e.g. overwritten by the Growatt cloud via ShineWiFi dongle), it retries up to 3 times.
+
+**Cloud override detection:** If a verified write is later found to have reverted on the next poll cycle, the integration logs a warning and creates a **persistent notification** in the Home Assistant UI explaining the issue and how to resolve it (disconnect ShineWiFi dongle or disable cloud control in the Growatt app).
+
+**Config flow warning:** When setting up a battery-enabled inverter (SPH, SPF, MOD-XH, TL-XH, WIT), a persistent notification is shown warning that cloud-connected dongles may override local controls.
+
+**Affected files:** `growatt_modbus.py` (new `write_register_verified()` method), `coordinator.py` (write tracking + deferred override detection), `select.py`, `number.py`, `time.py` (8 write methods updated), `config_flow.py` (cloud warning notification).
+
+---
+
+### 🔧 Fix — Energy Totals Dropping to Zero on Dormant/Offline Inverters (Issue #206)
+
+`total_increasing` energy sensors (lifetime and daily totals) were returning `0` when the inverter was dormant at night or truly offline. This caused HA's Energy Dashboard to record phantom counter resets — massive energy spikes in statistics.
+
+**Two root causes identified:**
+
+1. **Dormant inverter (responds to Modbus with zeros):** Many inverters stay powered at night (battery/grid) and respond to Modbus queries, but return `0` for all production and energy registers. The integration treated this as valid data since the connection succeeded — `_inverter_online = True`, offline behavior never activated.
+
+2. **Truly offline inverter (no Modbus response):** The coordinator returned cached data with `last_update_success = True`, so entities remained "available" — HA recorded stale flatline values as real measurements.
+
+**Fix — two-layer protection:**
+
+- **`available = False` when offline:** Sensor entities now override the `available` property to check `coordinator.is_online`. When the inverter stops responding, ALL entities go `unavailable`. HA's statistics engine ignores unavailable states — clean gaps, no phantom data.
+
+- **Dormant-inverter retention:** New `_protect_energy_totals()` in the coordinator tracks last known non-zero values for all `total_increasing` attrs. When the hardware reports `0` but a non-zero value was previously seen, the retained value is substituted. Only blocks drops to exactly `0` — non-zero decreases (register jitter) pass through normally. Daily retention clears at midnight so the new day starts fresh.
+
+**Affected files:** `const.py` (new `LIFETIME_TOTAL_ATTRS` / `DAILY_TOTAL_ATTRS` lists), `coordinator.py` (retention logic + midnight clearing), `sensor.py` (`available` property override).
 
 ---
 
@@ -55,9 +89,9 @@ Uses MOD TL3-XH holding registers 3038–3045 (FC04). Start registers use bit-pa
 
 **Root causes and fixes:**
 
-1. **Offline behavior regression (issue #206 — already noted above):** `battery_charge_total`, `battery_discharge_total` went unavailable when offline. Fixed by reverting to `retain`.
+1. **Offline behavior regression (issue #206 — already noted above):** `battery_charge_total`, `battery_discharge_total` showed `0` when offline due to `GrowattData` initialising all fields to `0.0`. Fixed by setting both `daily_total` and `lifetime_total` offline behavior to `unavailable`.
 
-2. **Missing offline behavior for SPF-specific sensors:** `ac_charge_energy_total`, `ac_discharge_energy_total`, and `generator_discharge_total` were not classified in `SENSOR_TYPES`, defaulting to `diagnostic` behavior (unavailable offline) instead of `lifetime_total` (retain). Similarly, `ac_input_power`, `ac_apparent_power`, and `load_power` were not classified as `power` sensors, so they went unavailable instead of `0` when offline. **Fixed:** Added all missing entries to the correct `SENSOR_TYPES` categories.
+2. **Missing offline behavior for SPF-specific sensors:** `ac_charge_energy_total`, `ac_discharge_energy_total`, and `generator_discharge_total` were not classified in `SENSOR_TYPES`, defaulting to `diagnostic` behavior (unavailable offline) instead of `lifetime_total` (unavailable). Similarly, `ac_input_power`, `ac_apparent_power`, and `load_power` were not classified as `power` sensors, so they went unavailable instead of `0` when offline. **Fixed:** Added all missing entries to the correct `SENSOR_TYPES` categories.
 
 3. **Battery power incorrectly zeroed when SOC > 0:** The 10V voltage threshold guard (introduced to prevent garbage readings from a disconnected battery) also blocked power readings for connected batteries that report `0V` in certain modes (e.g. bypass/standby on some SPF firmware). The guard now requires **both** voltage `< 10V` **and** SOC `< 5%` before zeroing battery power — if SOC > 5%, the battery is present and power registers are trusted.
 

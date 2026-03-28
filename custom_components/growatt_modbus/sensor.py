@@ -1004,6 +1004,18 @@ class GrowattModbusSensor(CoordinatorEntity, SensorEntity):
         return self.coordinator.get_device_info(self._device_type)
 
     @property
+    def available(self) -> bool:
+        """Entity is available only when coordinator succeeded AND inverter is online.
+
+        When the inverter stops responding to Modbus (truly offline), all entities
+        go unavailable. HA's statistics engine ignores unavailable states, preventing
+        flatline data from being recorded as real measurements. When the inverter is
+        online but dormant (responds with zeros), available stays True and the
+        coordinator's retention logic protects total_increasing sensors.
+        """
+        return self.coordinator.last_update_success and self.coordinator.is_online
+
+    @property
     def native_value(self) -> Any:
         """Return the state of the sensor."""
         if self.coordinator.data is None:

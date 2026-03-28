@@ -631,6 +631,26 @@ INVERTER_PROFILES = {
         ),
     },
 
+    "spe_8000_12000_es": {
+        "name": "SPE 8000-12000 ES",
+        "description": "Single-phase hybrid inverter with battery storage (8-12kW)",
+        "register_map": "SPE_8000_12000_ES",
+        "phases": 1,
+        "has_pv3": False,
+        "has_battery": True,
+        "max_power_kw": 12.0,
+        "sensors": (
+            BASIC_PV_SENSORS |
+            BASIC_AC_SENSORS |
+            ENERGY_SENSORS |
+            ENERGY_BREAKDOWN_SENSORS |
+            BATTERY_SENSORS |
+            TEMPERATURE_SENSORS |
+            STATUS_SENSORS |
+            SPF_OFFGRID_SENSORS
+        ),
+    },
+
     # ========================================================================
     # MOD SERIES - Modular Three Phase Hybrid
     # ========================================================================
@@ -817,6 +837,11 @@ PROFILE_DISPLAY_NAMES = {
         "base": "spf_3000_6000_es_plus",
         "v201": "spf_3000_6000_es_plus",  # Only one variant
         "description": "Off-grid with battery",
+    },
+    "SPE (8-12kW)": {
+        "base": "spe_8000_12000_es",
+        "v201": "spe_8000_12000_es",  # Only one variant
+        "description": "Hybrid with battery (8-12kW)",
     },
 }
 
