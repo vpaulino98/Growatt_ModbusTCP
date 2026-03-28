@@ -110,6 +110,14 @@ def detect_profile_from_model_name(model_name: str) -> Optional[str]:
         'WIT12000': 'wit_4000_15000tl3',
         'WIT15000': 'wit_4000_15000tl3',
 
+        # SPE series (single-phase hybrid, 8-12kW, SPF protocol)
+        'SPE8000': 'spe_8000_12000_es',
+        'SPE10000': 'spe_8000_12000_es',
+        'SPE12000': 'spe_8000_12000_es',
+        'SPE8K': 'spe_8000_12000_es',
+        'SPE10K': 'spe_8000_12000_es',
+        'SPE12K': 'spe_8000_12000_es',
+
     }
     
     # Try to find a match - check longer patterns first to match specific models

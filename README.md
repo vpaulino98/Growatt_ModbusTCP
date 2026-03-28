@@ -1,7 +1,7 @@
 # Growatt Modbus Integration for Home Assistant ☀️
 
 ![HACS Badge](https://img.shields.io/badge/HACS-Custom-orange.svg)
-![Version](https://img.shields.io/badge/Version-0.6.5-blue.svg)
+![Version](https://img.shields.io/badge/Version-0.6.6b2-blue.svg)
 [![GitHub Issues](https://img.shields.io/github/issues/0xAHA/Growatt_ModbusTCP.svg)](https://github.com/0xAHA/Growatt_ModbusTCP/issues)
 [![GitHub Stars](https://img.shields.io/github/stars/0xAHA/Growatt_ModbusTCP.svg?style=social)](https://github.com/0xAHA/Growatt_ModbusTCP)
 
@@ -61,7 +61,7 @@ A native Home Assistant integration for Growatt solar inverters using direct Mod
 **Single-Phase:**
 
 - **Grid-Tied:** MIC 0.6-3.3kW, MIN 3-6kW, MIN 7-10kW ✅
-- **Hybrid:** SPH 3-6kW, SPH 7-10kW, SPH/SPM 8-10kW HU, TL-XH 3-10kW, MIN TL-XH 3-10kW
+- **Hybrid:** SPH 3-6kW, SPH 7-10kW, SPH/SPM 8-10kW HU, SPE 8-12kW ES, TL-XH 3-10kW, MIN TL-XH 3-10kW
 - **Off-Grid:** SPF 3-6kW ES PLUS
 
 **Three-Phase:**
@@ -97,7 +97,7 @@ A native Home Assistant integration for Growatt solar inverters using direct Mod
 **Model-Specific:**
 
 - **1 PV string:** MIC
-- **2 PV strings:** MIN 3-6kW, SPH 3-6kW/7-10kW, SPH-TL3, MID
+- **2 PV strings:** MIN 3-6kW, SPH 3-6kW/7-10kW, SPE 8-12kW, SPH-TL3, MID
 - **3 PV strings:** MIN 7-10kW, SPH/SPM 8-10kW HU, TL-XH, MOD
 
 📖 **[Complete sensor list by model →](docs/MODELS.md#-sensor-availability-by-model)**
@@ -281,6 +281,7 @@ If auto-detection fails or you have a legacy inverter:
 - SPH 3000-6000 (2 PV, battery)
 - SPH 7000-10000 (2 PV, battery)
 - SPH/SPM 8000-10000 HU (3 PV, battery, BMS)
+- SPE 8000-12000 ES (2 PV, battery, peak shaving)
 - TL-XH 3000-10000 (3 PV, battery)
 - MIN TL-XH 3000-10000 (2-3 PV, battery)
 

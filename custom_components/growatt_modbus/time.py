@@ -12,6 +12,7 @@ from homeassistant.helpers.entity import EntityCategory
 
 from .const import DOMAIN, WRITABLE_REGISTERS, CONF_REGISTER_MAP, get_device_type_for_control, DEVICE_TYPE_BATTERY, MOD_TOU_PERIODS
 from .coordinator import GrowattModbusCoordinator
+from .growatt_modbus import ModbusWriteError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -112,17 +113,26 @@ class GrowattGenericTime(CoordinatorEntity, TimeEntity):
         """Write a new time value encoded as hex-packed bytes to the Modbus register."""
         raw_value = (value.hour << 8) | value.minute
         register = self._control_config['register']
-        success = await self.hass.async_add_executor_job(
-            self.coordinator.modbus_client.write_register, register, raw_value
-        )
-        if success:
-            _LOGGER.info(
-                "Set %s to %s (raw=0x%04X=%d)",
-                self._control_name, value.strftime("%H:%M"), raw_value, raw_value,
+        try:
+            write_ok, verified = await self.hass.async_add_executor_job(
+                self.coordinator.modbus_client.write_register_verified, register, raw_value,
             )
-            await self.coordinator.async_request_refresh()
-        else:
+        except ModbusWriteError:
             _LOGGER.error("Failed to write %s (register %d)", self._control_name, register)
+            return
+        if write_ok:
+            if verified:
+                _LOGGER.info(
+                    "Set %s to %s (raw=0x%04X=%d, verified)",
+                    self._control_name, value.strftime("%H:%M"), raw_value, raw_value,
+                )
+            else:
+                _LOGGER.warning(
+                    "%s: write succeeded but value reverted (possible cloud override)",
+                    self._control_name,
+                )
+            self.coordinator.track_write(register, raw_value, self._control_name)
+            await self.coordinator.async_request_refresh()
 
 
 class GrowattModTouTime(CoordinatorEntity, TimeEntity):
@@ -204,18 +214,27 @@ class GrowattModTouTime(CoordinatorEntity, TimeEntity):
             # End register: plain hex-packed write
             new_raw = (value.hour << 8) | value.minute
 
-        success = await self.hass.async_add_executor_job(
-            self.coordinator.modbus_client.write_register, self._register, new_raw
-        )
-        if success:
-            _LOGGER.info(
-                "Set MOD TOU period %d %s to %s (raw=0x%04X=%d)",
-                self._period, "start" if self._is_start else "end",
-                value.strftime("%H:%M"), new_raw, new_raw,
+        try:
+            write_ok, verified = await self.hass.async_add_executor_job(
+                self.coordinator.modbus_client.write_register_verified, self._register, new_raw,
             )
-            await self.coordinator.async_request_refresh()
-        else:
+        except ModbusWriteError:
             _LOGGER.error(
                 "Failed to write MOD TOU period %d %s (register %d)",
                 self._period, "start" if self._is_start else "end", self._register,
             )
+            return
+        if write_ok:
+            slot = "start" if self._is_start else "end"
+            if verified:
+                _LOGGER.info(
+                    "Set MOD TOU period %d %s to %s (raw=0x%04X=%d, verified)",
+                    self._period, slot, value.strftime("%H:%M"), new_raw, new_raw,
+                )
+            else:
+                _LOGGER.warning(
+                    "MOD TOU period %d %s: write succeeded but value reverted (possible cloud override)",
+                    self._period, slot,
+                )
+            self.coordinator.track_write(self._register, new_raw, self._data_field)
+            await self.coordinator.async_request_refresh()

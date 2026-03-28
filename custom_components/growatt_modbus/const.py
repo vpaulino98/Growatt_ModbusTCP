@@ -478,6 +478,30 @@ def get_sensor_type(sensor_key: str) -> str:
     return 'diagnostic'  # Default to diagnostic if not found
 
 
+# GrowattData attrs for lifetime totals — must never drop to 0 during runtime
+# These are field names on the GrowattData dataclass, not sensor keys.
+LIFETIME_TOTAL_ATTRS = [
+    'energy_total', 'energy_to_grid_total', 'load_energy_total',
+    'energy_to_user_total',
+    'charge_energy_total', 'discharge_energy_total',
+    'op_discharge_energy_total',
+    'ac_charge_energy_total', 'ac_discharge_energy_total',
+    'generator_discharge_total',
+    'extra_energy_total', 'pv_energy_total',
+]
+
+# GrowattData attrs for daily totals — retain within day, clear at midnight
+DAILY_TOTAL_ATTRS = [
+    'energy_today', 'energy_to_grid_today', 'load_energy_today',
+    'energy_to_user_today',
+    'charge_energy_today', 'discharge_energy_today',
+    'ac_charge_energy_today', 'ac_discharge_energy_today',
+    'op_discharge_energy_today',
+    'generator_discharge_today',
+    'extra_energy_today',
+]
+
+
 # ============================================================================
 # DEVICE STRUCTURE - Multi-Device Organization
 # ============================================================================

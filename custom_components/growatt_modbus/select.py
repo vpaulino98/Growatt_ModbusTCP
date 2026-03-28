@@ -19,6 +19,7 @@ from .const import (
     MOD_TOU_PERIODS,
 )
 from .coordinator import GrowattModbusCoordinator
+from .growatt_modbus import ModbusWriteError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -191,19 +192,27 @@ class GrowattGenericSelect(CoordinatorEntity, SelectEntity):
             register_addr = self._control_config['register']
             _LOGGER.debug("Using fallback register %d for %s", register_addr, self._control_name)
 
-        # Write to Modbus register
-        success = await self.hass.async_add_executor_job(
-            self.coordinator.modbus_client.write_register,
-            register_addr,
-            value
-        )
+        # Write to Modbus register with read-back verification
+        try:
+            write_ok, verified = await self.hass.async_add_executor_job(
+                self.coordinator.modbus_client.write_register_verified,
+                register_addr,
+                value,
+            )
+        except ModbusWriteError:
+            _LOGGER.error("Failed to write %s (register %d)", self._control_name, register_addr)
+            return
 
-        if success:
-            _LOGGER.info("Set %s to %s (value=%d)", self._control_name, option, value)
-            # Request immediate refresh to show new value
+        if write_ok:
+            if verified:
+                _LOGGER.info("Set %s to %s (value=%d, verified)", self._control_name, option, value)
+            else:
+                _LOGGER.warning(
+                    "%s: write succeeded but value reverted (possible cloud override)",
+                    self._control_name,
+                )
+            self.coordinator.track_write(register_addr, value, self._control_name)
             await self.coordinator.async_request_refresh()
-        else:
-            _LOGGER.error("Failed to write %s", self._control_name)
 
 
 class GrowattWitWorkModeSelect(CoordinatorEntity, SelectEntity):
@@ -588,14 +597,20 @@ class GrowattModTouPriority(CoordinatorEntity, SelectEntity):
         data = self.coordinator.data
         current_raw = getattr(data, self._start_field, 0) if data else 0
         new_raw = (int(current_raw) & 0x9FFF) | (priority << 13)
-        success = await self.hass.async_add_executor_job(
-            self.coordinator.modbus_client.write_register, self._start_reg, new_raw
-        )
-        if success:
-            _LOGGER.info("Set MOD TOU period %d priority to %s (raw=0x%04X)", self._period, option, new_raw)
-            await self.coordinator.async_request_refresh()
-        else:
+        try:
+            write_ok, verified = await self.hass.async_add_executor_job(
+                self.coordinator.modbus_client.write_register_verified, self._start_reg, new_raw,
+            )
+        except ModbusWriteError:
             _LOGGER.error("Failed to write MOD TOU period %d priority (register %d)", self._period, self._start_reg)
+            return
+        if write_ok:
+            if verified:
+                _LOGGER.info("Set MOD TOU period %d priority to %s (raw=0x%04X, verified)", self._period, option, new_raw)
+            else:
+                _LOGGER.warning("MOD TOU period %d priority: write succeeded but value reverted (possible cloud override)", self._period)
+            self.coordinator.track_write(self._start_reg, new_raw, self._start_field)
+            await self.coordinator.async_request_refresh()
 
 
 class GrowattModTouEnable(CoordinatorEntity, SelectEntity):
@@ -642,11 +657,17 @@ class GrowattModTouEnable(CoordinatorEntity, SelectEntity):
         data = self.coordinator.data
         current_raw = getattr(data, self._start_field, 0) if data else 0
         new_raw = (int(current_raw) & 0x7FFF) | (enable << 15)
-        success = await self.hass.async_add_executor_job(
-            self.coordinator.modbus_client.write_register, self._start_reg, new_raw
-        )
-        if success:
-            _LOGGER.info("Set MOD TOU period %d enable to %s (raw=0x%04X)", self._period, option, new_raw)
-            await self.coordinator.async_request_refresh()
-        else:
+        try:
+            write_ok, verified = await self.hass.async_add_executor_job(
+                self.coordinator.modbus_client.write_register_verified, self._start_reg, new_raw,
+            )
+        except ModbusWriteError:
             _LOGGER.error("Failed to write MOD TOU period %d enable (register %d)", self._period, self._start_reg)
+            return
+        if write_ok:
+            if verified:
+                _LOGGER.info("Set MOD TOU period %d enable to %s (raw=0x%04X, verified)", self._period, option, new_raw)
+            else:
+                _LOGGER.warning("MOD TOU period %d enable: write succeeded but value reverted (possible cloud override)", self._period)
+            self.coordinator.track_write(self._start_reg, new_raw, self._start_field)
+            await self.coordinator.async_request_refresh()

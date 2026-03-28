@@ -17,6 +17,7 @@ from .const import (
     get_device_type_for_control,
 )
 from .coordinator import GrowattModbusCoordinator
+from .growatt_modbus import ModbusWriteError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -235,20 +236,28 @@ class GrowattGenericNumber(CoordinatorEntity, NumberEntity):
         valid_range = self._control_config.get('valid_range', (0, 100))
         raw_value = max(valid_range[0], min(raw_value, valid_range[1]))
 
-        # Write to Modbus register
+        # Write to Modbus register with read-back verification
         register = self._control_config['register']
-        success = await self.hass.async_add_executor_job(
-            self.coordinator.modbus_client.write_register,
-            register,
-            raw_value
-        )
+        try:
+            write_ok, verified = await self.hass.async_add_executor_job(
+                self.coordinator.modbus_client.write_register_verified,
+                register,
+                raw_value,
+            )
+        except ModbusWriteError:
+            _LOGGER.error("Failed to write %s (register %d)", self._control_name, register)
+            return
 
-        if success:
-            _LOGGER.info("Set %s to %.1f (raw=%d)", self._control_name, value, raw_value)
-            # Request immediate refresh to show new value
+        if write_ok:
+            if verified:
+                _LOGGER.info("Set %s to %.1f (raw=%d, verified)", self._control_name, value, raw_value)
+            else:
+                _LOGGER.warning(
+                    "%s: write succeeded but value reverted (possible cloud override)",
+                    self._control_name,
+                )
+            self.coordinator.track_write(register, raw_value, self._control_name)
             await self.coordinator.async_request_refresh()
-        else:
-            _LOGGER.error("Failed to write %s", self._control_name)
 
 
 # Legacy class for backwards compatibility (remove in future version)
@@ -308,20 +317,25 @@ class GrowattExportLimitPowerNumber(CoordinatorEntity, NumberEntity):
         valid_range = WRITABLE_REGISTERS['export_limit_power']['valid_range']
         raw_value = max(valid_range[0], min(raw_value, valid_range[1]))
         
-        # Write to Modbus register
+        # Write to Modbus register with read-back verification
         register = WRITABLE_REGISTERS['export_limit_power']['register']
-        success = await self.hass.async_add_executor_job(
-            self.coordinator.modbus_client.write_register,
-            register,
-            raw_value
-        )
-        
-        if success:
-            _LOGGER.info("Set export_limit_power to %.1f%% (raw=%d)", value, raw_value)
-            # Request immediate refresh to show new value
+        try:
+            write_ok, verified = await self.hass.async_add_executor_job(
+                self.coordinator.modbus_client.write_register_verified,
+                register,
+                raw_value,
+            )
+        except ModbusWriteError:
+            _LOGGER.error("Failed to write export_limit_power (register %d)", register)
+            return
+
+        if write_ok:
+            if verified:
+                _LOGGER.info("Set export_limit_power to %.1f%% (raw=%d, verified)", value, raw_value)
+            else:
+                _LOGGER.warning("export_limit_power: write succeeded but value reverted (possible cloud override)")
+            self.coordinator.track_write(register, raw_value, 'export_limit_power')
             await self.coordinator.async_request_refresh()
-        else:
-            _LOGGER.error("Failed to write export_limit_power")
 
 
 class GrowattActivePowerRateNumber(CoordinatorEntity, NumberEntity):
@@ -378,20 +392,25 @@ class GrowattActivePowerRateNumber(CoordinatorEntity, NumberEntity):
         valid_range = WRITABLE_REGISTERS['active_power_rate']['valid_range']
         raw_value = max(valid_range[0], min(raw_value, valid_range[1]))
 
-        # Write to Modbus register
+        # Write to Modbus register with read-back verification
         register = WRITABLE_REGISTERS['active_power_rate']['register']
-        success = await self.hass.async_add_executor_job(
-            self.coordinator.modbus_client.write_register,
-            register,
-            raw_value
-        )
+        try:
+            write_ok, verified = await self.hass.async_add_executor_job(
+                self.coordinator.modbus_client.write_register_verified,
+                register,
+                raw_value,
+            )
+        except ModbusWriteError:
+            _LOGGER.error("Failed to write active_power_rate (register %d)", register)
+            return
 
-        if success:
-            _LOGGER.info("Set active_power_rate to %d%%", raw_value)
-            # Request immediate refresh to show new value
+        if write_ok:
+            if verified:
+                _LOGGER.info("Set active_power_rate to %d%% (verified)", raw_value)
+            else:
+                _LOGGER.warning("active_power_rate: write succeeded but value reverted (possible cloud override)")
+            self.coordinator.track_write(register, raw_value, 'active_power_rate')
             await self.coordinator.async_request_refresh()
-        else:
-            _LOGGER.error("Failed to write active_power_rate")
 
 
 class GrowattWitExportLimitWNumber(CoordinatorEntity, NumberEntity):

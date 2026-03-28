@@ -564,6 +564,28 @@ class GrowattModbusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN): # type:
                     },
                 )
 
+                # Cloud override warning for battery-enabled profiles
+                detected_profile = self._discovered_data.get("detected_profile", {})
+                if detected_profile.get("has_battery", False):
+                    await self.hass.services.async_call(
+                        "persistent_notification",
+                        "create",
+                        {
+                            "title": "Growatt: Cloud Control Warning",
+                            "message": (
+                                "**Important:** If your inverter has a ShineWiFi or ShineLink dongle "
+                                "connected to the Growatt cloud, the cloud server may override local "
+                                "Modbus control changes (priority mode, time schedules, export limits, "
+                                "etc.) within seconds.\n\n"
+                                "**To ensure reliable local control:**\n"
+                                "- Disconnect the ShineWiFi/ShineLink dongle from the inverter, OR\n"
+                                "- Disable remote control in the ShinePhone/Growatt app\n\n"
+                                "Sensor monitoring (read-only) is **not affected** by the cloud connection."
+                            ),
+                            "notification_id": "growatt_cloud_warning",
+                        },
+                    )
+
                 return self.async_create_entry(
                     title=f"{config_data[CONF_NAME]} ({profile_name})",
                     data=config_data,
@@ -720,6 +742,27 @@ class GrowattModbusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN): # type:
                             "notification_id": f"growatt_setup_{config_data.get(CONF_HOST, config_data.get(CONF_DEVICE_PATH, 'device'))}",
                         },
                     )
+
+                    # Cloud override warning for battery-enabled profiles
+                    if profile.get("has_battery", False):
+                        await self.hass.services.async_call(
+                            "persistent_notification",
+                            "create",
+                            {
+                                "title": "Growatt: Cloud Control Warning",
+                                "message": (
+                                    "**Important:** If your inverter has a ShineWiFi or ShineLink dongle "
+                                    "connected to the Growatt cloud, the cloud server may override local "
+                                    "Modbus control changes (priority mode, time schedules, export limits, "
+                                    "etc.) within seconds.\n\n"
+                                    "**To ensure reliable local control:**\n"
+                                    "- Disconnect the ShineWiFi/ShineLink dongle from the inverter, OR\n"
+                                    "- Disable remote control in the ShinePhone/Growatt app\n\n"
+                                    "Sensor monitoring (read-only) is **not affected** by the cloud connection."
+                                ),
+                                "notification_id": "growatt_cloud_warning",
+                            },
+                        )
 
                     return self.async_create_entry(
                         title=f"{config_data[CONF_NAME]} ({profile['name']})",

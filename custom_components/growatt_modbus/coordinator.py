@@ -163,10 +163,101 @@ class GrowattModbusCoordinator(DataUpdateCoordinator[GrowattData]):
         
         # Set up midnight callback for daily total resets
         self._setup_midnight_callback()
+
+        # Energy total retention — prevents total_increasing spikes from dormant-inverter zeros
+        self._retained_lifetime_totals: dict[str, float] = {}
+        self._retained_daily_totals: dict[str, float] = {}
+
+        # Cloud override detection: tracks recently written register values
+        # Format: {register_address: (expected_value, write_timestamp, control_name)}
+        self._pending_write_checks: dict[int, tuple[int, float, str]] = {}
+        self._cloud_override_notified: bool = False  # Only notify once per session
+
     @property
     def modbus_client(self):
         """Expose the modbus client for write operations."""
         return self._client
+
+    def track_write(self, register: int, expected_value: int, control_name: str) -> None:
+        """Track a recently written register value for deferred cloud override detection.
+
+        Called by entity write methods after a successful write. On the next poll cycle,
+        _check_for_cloud_overrides() compares the tracked value against the fresh data.
+        """
+        import time as _time
+        self._pending_write_checks[register] = (expected_value, _time.time(), control_name)
+
+    async def _check_for_cloud_overrides(self, data) -> None:
+        """Check if any recently written register values have been overridden by the cloud."""
+        if not self._pending_write_checks:
+            return
+
+        import time as _time
+        current_time = _time.time()
+        to_remove = []
+        overridden_controls = []
+
+        for register, (expected_value, write_time, control_name) in self._pending_write_checks.items():
+            age = current_time - write_time
+
+            # Expire entries older than 120 seconds (roughly 2 poll cycles)
+            if age > 120:
+                to_remove.append(register)
+                continue
+
+            # Get current value from the freshly polled data
+            current_value = getattr(data, control_name, None)
+            if current_value is None:
+                continue
+
+            if int(current_value) == expected_value:
+                # Write stuck — remove from tracking
+                to_remove.append(register)
+            else:
+                # Value reverted — cloud override detected
+                overridden_controls.append((control_name, expected_value, int(current_value), age))
+                to_remove.append(register)
+
+        # Clean up tracked entries
+        for reg in to_remove:
+            self._pending_write_checks.pop(reg, None)
+
+        # Report overrides
+        if overridden_controls:
+            for control_name, expected, actual, age in overridden_controls:
+                _LOGGER.warning(
+                    "Cloud override detected: '%s' was set to %d but reverted to %d "
+                    "after %.0f seconds. The Growatt cloud (ShineWiFi dongle) is likely "
+                    "overwriting local Modbus writes. To fix: disconnect the ShineWiFi "
+                    "dongle, or disable cloud control in the Growatt app.",
+                    control_name, expected, actual, age,
+                )
+
+            # Send persistent notification (once per session to avoid spam)
+            if not self._cloud_override_notified:
+                self._cloud_override_notified = True
+                affected = ", ".join(
+                    c[0].replace('_', ' ').title() for c in overridden_controls
+                )
+                try:
+                    await self.hass.services.async_call(
+                        "persistent_notification",
+                        "create",
+                        {
+                            "title": "Growatt: Cloud Override Detected",
+                            "message": (
+                                f"Local Modbus writes to **{affected}** are being overridden by the "
+                                f"Growatt cloud server via the ShineWiFi dongle.\n\n"
+                                f"**To resolve:** Disconnect the ShineWiFi dongle from the inverter, "
+                                f"or disable remote control in the ShinePhone/Growatt app.\n\n"
+                                f"While the dongle is connected and cloud control is active, "
+                                f"local settings changes will be reverted within ~10 seconds."
+                            ),
+                            "notification_id": "growatt_cloud_override",
+                        },
+                    )
+                except Exception as err:
+                    _LOGGER.debug("Could not create persistent notification: %s", err)
 
     def _get_register_map(self) -> str:
         """Get register map with migration support."""
@@ -276,9 +367,15 @@ class GrowattModbusCoordinator(DataUpdateCoordinator[GrowattData]):
         
         # Update current date
         self._current_date = datetime.now().date()
-        
+
+        # Reset cloud override notification flag so it can fire again tomorrow
+        self._cloud_override_notified = False
+
+        # Clear daily total retention so new day starts fresh
+        self._retained_daily_totals = {}
+
         _LOGGER.debug("Previous day totals stored: %s", self._previous_day_totals)
-        
+
         # If inverter is offline, zero out the daily totals now
         if not self._inverter_online and self.data is not None:
             _LOGGER.debug("Inverter offline at midnight - resetting daily totals to 0")
@@ -335,6 +432,49 @@ class GrowattModbusCoordinator(DataUpdateCoordinator[GrowattData]):
         """Return whether the inverter is currently online."""
         return self._inverter_online
 
+    def _protect_energy_totals(self, data) -> None:
+        """Prevent total_increasing sensors from dropping to 0 on dormant inverters.
+
+        Some inverters respond to Modbus at night but return 0 for all registers.
+        A lifetime total dropping from e.g. 5000 kWh to 0 causes HA's
+        total_increasing to record a phantom counter reset, spiking the
+        energy dashboard.
+
+        Retention is internal — when the inverter is truly offline,
+        available=False on the sensor entity handles it instead.
+        """
+        from .const import LIFETIME_TOTAL_ATTRS, DAILY_TOTAL_ATTRS
+
+        # Lifetime totals: only block drops to exactly 0
+        for attr in LIFETIME_TOTAL_ATTRS:
+            value = getattr(data, attr, 0)
+            retained = self._retained_lifetime_totals.get(attr)
+
+            if value > 0:
+                # Real value — update retention
+                self._retained_lifetime_totals[attr] = value
+            elif retained is not None and retained > 0:
+                # Value dropped to 0 but we had a real value — dormant inverter
+                _LOGGER.debug(
+                    "Retaining %s=%.2f (hardware reported 0, likely dormant)",
+                    attr, retained
+                )
+                setattr(data, attr, retained)
+
+        # Daily totals: same logic, but retention clears at midnight
+        for attr in DAILY_TOTAL_ATTRS:
+            value = getattr(data, attr, 0)
+            retained = self._retained_daily_totals.get(attr)
+
+            if value > 0:
+                self._retained_daily_totals[attr] = value
+            elif retained is not None and retained > 0:
+                _LOGGER.debug(
+                    "Retaining %s=%.2f (hardware reported 0, likely dormant)",
+                    attr, retained
+                )
+                setattr(data, attr, retained)
+
     async def _async_update_data(self) -> GrowattData:
         """Fetch data from the Growatt inverter."""
         if self._client is None:
@@ -378,6 +518,8 @@ class GrowattModbusCoordinator(DataUpdateCoordinator[GrowattData]):
                         self.data.load_energy_today = 0
                         self.data.energy_to_user_today = 0
                         self._current_date = current_date
+                        # Clear daily retention for new day
+                        self._retained_daily_totals = {}
 
                     # Return existing data (sensors will apply offline behavior via get_sensor_value)
                     return self.data
@@ -456,6 +598,12 @@ class GrowattModbusCoordinator(DataUpdateCoordinator[GrowattData]):
                 # Debounce window expired
                 _LOGGER.debug("Debounce window expired - normal operation resumed")
                 self._just_came_online_time = None
+
+            # Check for cloud overrides on recently written registers
+            await self._check_for_cloud_overrides(data)
+
+            # Protect energy totals from dormant-inverter zeros
+            self._protect_energy_totals(data)
 
             return data
 
