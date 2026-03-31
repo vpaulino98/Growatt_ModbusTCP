@@ -8,6 +8,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import device_registry as dr
 
 
 from .const import (
@@ -15,6 +16,7 @@ from .const import (
     CONF_DEVICE_STRUCTURE_VERSION,
     CURRENT_DEVICE_STRUCTURE_VERSION,
     WRITABLE_REGISTERS,
+    DEVICE_TYPE_INVERTER,
 )
 from .coordinator import GrowattModbusCoordinator
 from .diagnostic import async_setup_services
@@ -85,7 +87,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     _LOGGER.info("Removing stale VPP export limit entity %s (register 30200/30201 not responsive)", stale_eid)
                     entity_registry.async_remove(stale_eid)
 
+    # Remove stale control_authority entity if the inverter doesn't respond to register 30100
+    if coordinator.data is not None and not coordinator.data.vpp_control_authority_available:
+        entity_registry = er.async_get(hass)
+        stale_uid = f"{entry.entry_id}_control_authority"
+        stale_eid = entity_registry.async_get_entity_id("select", DOMAIN, stale_uid)
+        if stale_eid:
+            _LOGGER.info("Removing stale control_authority entity %s (register 30100 not responsive)", stale_eid)
+            entity_registry.async_remove(stale_eid)
+
     hass.data[DOMAIN][entry.entry_id] = coordinator
+
+    # Pre-create the parent inverter device so sub-devices (solar, grid, load, battery)
+    # can safely reference it via via_device before their sensors are added.
+    # Without this, HA 2025.12+ raises "referencing a non-existing via_device".
+    _inv_info = coordinator.get_device_info(DEVICE_TYPE_INVERTER)
+    dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers=_inv_info["identifiers"],
+        name=_inv_info.get("name"),
+        manufacturer=_inv_info.get("manufacturer"),
+        model=_inv_info.get("model"),
+        hw_version=_inv_info.get("hw_version"),
+    )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 

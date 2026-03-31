@@ -258,6 +258,7 @@ class GrowattData:
     vpp_export_limit_enable: int = 0          # 0=Disabled, 1=Enabled
     vpp_export_limit_power_rate: int = 0      # -100 to +100% (positive=export, 0=zero export)
     vpp_export_limit_available: bool = False  # True if inverter actually responded to registers 30200-30201
+    vpp_control_authority_available: bool = False  # True if inverter actually responded to register 30100
 
     # MOD TL3-XH TOU periods (FC04 holding registers 3038-3045, raw packed values)
     # Start reg: bit15=enable, bit13-14=priority(0=Load,1=Batt,2=Grid), bit8-12=hour, bit0-7=min
@@ -507,8 +508,14 @@ class GrowattModbus:
             time.sleep(sleep_time)
         self.last_read_time = time.time()
     
-    def read_input_registers(self, start_address: int, count: int) -> Optional[list]:
-        """Read input registers with error handling"""
+    def read_input_registers(self, start_address: int, count: int, log_errors: bool = True) -> Optional[list]:
+        """Read input registers with error handling.
+
+        Args:
+            start_address: First register address to read
+            count: Number of registers to read
+            log_errors: If False, downgrade Modbus errors to DEBUG (for optional ranges expected to fail on some models)
+        """
         self._enforce_read_interval()
         
         try:
@@ -546,19 +553,37 @@ class GrowattModbus:
             # Handle different pymodbus versions for error checking
             if hasattr(response, 'isError'):
                 if response.isError():
-                    logger.warning(f"Modbus error reading input registers {start_address}-{start_address+count-1}: {response}")
+                    _log = logger.warning if log_errors else logger.debug
+                    _log(f"Modbus error reading input registers {start_address}-{start_address+count-1}: {response}")
                     self._track_read_failure()
                     return None
             elif hasattr(response, 'is_error') and callable(response.is_error):
                 if response.is_error():
-                    logger.warning(f"Modbus error reading input registers {start_address}-{start_address+count-1}: {response}")
+                    _log = logger.warning if log_errors else logger.debug
+                    _log(f"Modbus error reading input registers {start_address}-{start_address+count-1}: {response}")
                     self._track_read_failure()
                     return None
 
             if hasattr(response, 'registers'):
-                logger.debug(f"Successfully read {len(response.registers)} registers from {start_address}")
+                registers = response.registers
+                if not registers:
+                    logger.warning(
+                        "Inverter returned empty register list for %d-%d "
+                        "(adapter online but inverter not responding — likely night-time sleep)",
+                        start_address, start_address + count - 1
+                    )
+                    self._track_read_failure()
+                    return None
+                if len(registers) < count:
+                    logger.warning(
+                        "Inverter returned only %d of %d requested registers at %d — treating as failure",
+                        len(registers), count, start_address
+                    )
+                    self._track_read_failure()
+                    return None
+                logger.debug("Successfully read %d registers from %d", len(registers), start_address)
                 self._track_read_success()
-                return response.registers
+                return registers
 
             logger.warning(f"Unknown response type: {type(response)}, response: {response}")
             self._track_read_failure()
@@ -973,7 +998,7 @@ class GrowattModbus:
                     continue
 
                 logger.debug(f"Reading 31000 sub-range ({min_addr_block}-{max_addr_block}, {count_block} registers)")
-                registers = self.read_input_registers(min_addr_block, count_block)
+                registers = self.read_input_registers(min_addr_block, count_block, log_errors=is_wit_critical_range)
                 if registers is None:
                     # Only mark as permanently failed if it's truly optional
                     if not is_wit_critical_range:
@@ -1723,6 +1748,10 @@ class GrowattModbus:
                     if addr >= 31000:
                         vpp_score += 1
                         logger.debug(f"VPP range active for {sensor_name}: reg {addr} = {value}")
+                    elif 8000 <= addr < 9000:
+                        # WIT 8000-range is a native battery range equivalent to VPP
+                        vpp_score += 1
+                        logger.debug(f"WIT 8000-range active for {sensor_name}: reg {addr} = {value}")
                     elif 1000 <= addr < 4000:
                         fallback_score += 1
                         logger.debug(f"Fallback range active for {sensor_name}: reg {addr} = {value}")
@@ -1764,22 +1793,31 @@ class GrowattModbus:
 
         # Filter addresses by preferred range
         if preferred_range == 'vpp':
-            # Prefer VPP range (31000+), strict - no fallback
+            # Prefer VPP range (31000+), then WIT 8000-range (native battery range with no VPP counterpart)
             preferred_addrs = [a for a in addresses if a >= 31000]
             if not preferred_addrs:
-                # Register doesn't exist in VPP range - return None to trigger fallback logic
-                return None
+                # Also check 8000-range (WIT extended battery registers with no VPP counterpart, e.g. battery_current at 8035)
+                preferred_addrs = [a for a in addresses if 8000 <= a < 9000]
+                if not preferred_addrs:
+                    # Register doesn't exist in VPP or 8000 range - return None to trigger fallback logic
+                    return None
         elif preferred_range == 'legacy':
             # Off-grid/SPF: registers in base range 0-999 (Issue #204)
             preferred_addrs = [a for a in addresses if a < 1000]
             if not preferred_addrs:
-                return None
+                # Also check 8000-range as secondary for any legacy models that use it
+                preferred_addrs = [a for a in addresses if 8000 <= a < 9000]
+                if not preferred_addrs:
+                    return None
         else:  # 'fallback' or 'unknown'
             # Prefer fallback range (1000-3999), strict - no fallback
             preferred_addrs = [a for a in addresses if 1000 <= a < 4000]
             if not preferred_addrs:
-                # Register doesn't exist in fallback range - return None to trigger alternative registers
-                return None
+                # Also check 8000-range as secondary
+                preferred_addrs = [a for a in addresses if 8000 <= a < 9000]
+                if not preferred_addrs:
+                    # Register doesn't exist in fallback range - return None to trigger alternative registers
+                    return None
 
         # Return the first address from preferred range
         return preferred_addrs[0]
@@ -2373,6 +2411,7 @@ class GrowattModbus:
                 vpp_ctrl_regs = self.read_holding_registers(30100, 1)
                 if vpp_ctrl_regs is not None and len(vpp_ctrl_regs) >= 1:
                     data.control_authority = int(vpp_ctrl_regs[0])
+                    data.vpp_control_authority_available = True
                     logger.debug("[WIT VPP] control_authority=%s", data.control_authority)
             except Exception as e:
                 logger.debug(f"Could not read VPP control_authority register 30100: {e}")

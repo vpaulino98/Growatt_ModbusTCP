@@ -92,6 +92,12 @@ async def async_setup_entry(
                 _LOGGER.debug("Skipping vpp_export_limit_enable: register 30200 not confirmed responsive")
                 continue
 
+        # control_authority requires live confirmation that the inverter responds to 30100
+        if control_name == 'control_authority':
+            if coordinator.data is None or not coordinator.data.vpp_control_authority_available:
+                _LOGGER.debug("Skipping control_authority: register 30100 not confirmed responsive")
+                continue
+
         entities.append(
             GrowattGenericSelect(coordinator, config_entry, control_name, control_config)
         )
@@ -192,6 +198,21 @@ class GrowattGenericSelect(CoordinatorEntity, SelectEntity):
             register_addr = self._control_config['register']
             _LOGGER.debug("Using fallback register %d for %s", register_addr, self._control_name)
 
+        # WIT side-effect: disabling control_authority (30100=0) transiently resets register 122
+        # (export_limit_mode) to 0. On older WIT firmware it may not auto-restore when re-enabled.
+        # Save before disabling so we can restore after re-enabling.
+        is_wit = 'WIT' in self.coordinator.modbus_client.register_map.get('name', '')
+        if self._control_name == 'control_authority' and is_wit:
+            if value == 0:
+                saved = await self.hass.async_add_executor_job(
+                    self.coordinator.modbus_client.read_holding_registers, 122, 1
+                )
+                self.coordinator._saved_export_limit_mode_wit = saved[0] if saved else 0
+                _LOGGER.debug(
+                    "WIT: saved export_limit_mode=%d before disabling control authority",
+                    self.coordinator._saved_export_limit_mode_wit,
+                )
+
         # Write to Modbus register with read-back verification
         try:
             write_ok, verified = await self.hass.async_add_executor_job(
@@ -212,6 +233,26 @@ class GrowattGenericSelect(CoordinatorEntity, SelectEntity):
                     self._control_name,
                 )
             self.coordinator.track_write(register_addr, value, self._control_name)
+
+            # WIT: restore export_limit_mode after re-enabling control authority
+            if self._control_name == 'control_authority' and is_wit and value == 1:
+                saved = self.coordinator._saved_export_limit_mode_wit
+                if saved > 0:
+                    await asyncio.sleep(0.3)
+                    restored = await self.hass.async_add_executor_job(
+                        self.coordinator.modbus_client.write_register, 122, saved
+                    )
+                    if restored:
+                        _LOGGER.info(
+                            "WIT: restored export_limit_mode=%d after re-enabling control authority",
+                            saved,
+                        )
+                    else:
+                        _LOGGER.warning(
+                            "WIT: failed to restore export_limit_mode=%d after re-enabling control authority",
+                            saved,
+                        )
+
             await self.coordinator.async_request_refresh()
 
 
