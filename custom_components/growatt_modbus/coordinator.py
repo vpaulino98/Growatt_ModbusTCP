@@ -10,6 +10,7 @@ from homeassistant.const import CONF_HOST, CONF_PORT, CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.storage import Store
 
 from .const import (
     DOMAIN,
@@ -167,11 +168,17 @@ class GrowattModbusCoordinator(DataUpdateCoordinator[GrowattData]):
         # Energy total retention — prevents total_increasing spikes from dormant-inverter zeros
         self._retained_lifetime_totals: dict[str, float] = {}
         self._retained_daily_totals: dict[str, float] = {}
+        _store_key = f"{DOMAIN}.{entry.entry_id}_energy_totals"
+        self._energy_store: Store = Store(hass, version=1, key=_store_key)
 
         # Cloud override detection: tracks recently written register values
         # Format: {register_address: (expected_value, write_timestamp, control_name)}
         self._pending_write_checks: dict[int, tuple[int, float, str]] = {}
         self._cloud_override_notified: bool = False  # Only notify once per session
+
+        # WIT: saves register 122 (export_limit_mode) before disabling control authority (30100=0).
+        # Disabling 30100 transiently resets reg 122 to 0; on older firmware it may not auto-restore.
+        self._saved_export_limit_mode_wit: int = 0
 
     @property
     def modbus_client(self):
@@ -374,6 +381,9 @@ class GrowattModbusCoordinator(DataUpdateCoordinator[GrowattData]):
         # Clear daily total retention so new day starts fresh
         self._retained_daily_totals = {}
 
+        # Persist cleared daily totals (lifetime totals carry over)
+        await self._async_save_energy_totals()
+
         _LOGGER.debug("Previous day totals stored: %s", self._previous_day_totals)
 
         # If inverter is offline, zero out the daily totals now
@@ -384,7 +394,12 @@ class GrowattModbusCoordinator(DataUpdateCoordinator[GrowattData]):
             self.data.energy_to_grid_today = 0
             self.data.load_energy_today = 0
             self.data.energy_to_user_today = 0
-            
+            self.data.charge_energy_today = 0
+            self.data.discharge_energy_today = 0
+            self.data.ac_charge_energy_today = 0
+            self.data.ac_discharge_energy_today = 0
+            self.data.op_discharge_energy_today = 0
+
             # Trigger update to notify sensors
             self.async_set_updated_data(self.data)
 
@@ -445,14 +460,18 @@ class GrowattModbusCoordinator(DataUpdateCoordinator[GrowattData]):
         """
         from .const import LIFETIME_TOTAL_ATTRS, DAILY_TOTAL_ATTRS
 
+        _updated = False
+
         # Lifetime totals: only block drops to exactly 0
         for attr in LIFETIME_TOTAL_ATTRS:
             value = getattr(data, attr, 0)
             retained = self._retained_lifetime_totals.get(attr)
 
             if value > 0:
-                # Real value — update retention
-                self._retained_lifetime_totals[attr] = value
+                # Real value — update retention if changed
+                if self._retained_lifetime_totals.get(attr) != value:
+                    self._retained_lifetime_totals[attr] = value
+                    _updated = True
             elif retained is not None and retained > 0:
                 # Value dropped to 0 but we had a real value — dormant inverter
                 _LOGGER.debug(
@@ -467,13 +486,19 @@ class GrowattModbusCoordinator(DataUpdateCoordinator[GrowattData]):
             retained = self._retained_daily_totals.get(attr)
 
             if value > 0:
-                self._retained_daily_totals[attr] = value
+                if self._retained_daily_totals.get(attr) != value:
+                    self._retained_daily_totals[attr] = value
+                    _updated = True
             elif retained is not None and retained > 0:
                 _LOGGER.debug(
                     "Retaining %s=%.2f (hardware reported 0, likely dormant)",
                     attr, retained
                 )
                 setattr(data, attr, retained)
+
+        # Persist updated retention values (only when something changed, to avoid unnecessary I/O)
+        if _updated:
+            self.hass.async_create_task(self._async_save_energy_totals())
 
     async def _async_update_data(self) -> GrowattData:
         """Fetch data from the Growatt inverter."""
@@ -517,6 +542,11 @@ class GrowattModbusCoordinator(DataUpdateCoordinator[GrowattData]):
                         self.data.energy_to_grid_today = 0
                         self.data.load_energy_today = 0
                         self.data.energy_to_user_today = 0
+                        self.data.charge_energy_today = 0
+                        self.data.discharge_energy_today = 0
+                        self.data.ac_charge_energy_today = 0
+                        self.data.ac_discharge_energy_today = 0
+                        self.data.op_discharge_energy_today = 0
                         self._current_date = current_date
                         # Clear daily retention for new day
                         self._retained_daily_totals = {}
@@ -585,8 +615,8 @@ class GrowattModbusCoordinator(DataUpdateCoordinator[GrowattData]):
                     data.energy_to_grid_today = 0
                     data.load_energy_today = 0
                     data.energy_to_user_today = 0
-                    data.battery_charge_today = 0
-                    data.battery_discharge_today = 0
+                    data.charge_energy_today = 0
+                    data.discharge_energy_today = 0
                     data.grid_energy_today = 0
                     data.grid_import_energy_today = 0
                 else:
@@ -701,14 +731,52 @@ class GrowattModbusCoordinator(DataUpdateCoordinator[GrowattData]):
     async def async_config_entry_first_refresh(self) -> None:
         """Perform first refresh and handle setup errors."""
         try:
+            # Restore persisted energy totals before first data refresh
+            await self._async_load_energy_totals()
+
             # Read device identification before first data refresh
             await self.hass.async_add_executor_job(self._read_device_identification)
-            
+
             await super().async_config_entry_first_refresh()
         except UpdateFailed as err:
             _LOGGER.error("Initial setup failed: %s", err)
             raise
     
+    async def _async_load_energy_totals(self) -> None:
+        """Load persisted energy totals from HA storage."""
+        try:
+            stored = await self._energy_store.async_load()
+            if stored is None:
+                _LOGGER.debug("No persisted energy totals found (first run or storage cleared)")
+                return
+            # Lifetime totals: always restore (monotone increasing, never legitimately 0)
+            for attr, value in stored.get("lifetime_totals", {}).items():
+                if isinstance(value, (int, float)) and value > 0:
+                    self._retained_lifetime_totals[attr] = float(value)
+            # Daily totals: only restore if saved today
+            today_str = datetime.now().date().isoformat()
+            if stored.get("daily_totals_date") == today_str:
+                for attr, value in stored.get("daily_totals", {}).items():
+                    if isinstance(value, (int, float)) and value > 0:
+                        self._retained_daily_totals[attr] = float(value)
+            _LOGGER.debug(
+                "Restored %d lifetime totals, %d daily totals from storage",
+                len(self._retained_lifetime_totals), len(self._retained_daily_totals),
+            )
+        except Exception as err:
+            _LOGGER.warning("Failed to load persisted energy totals (non-fatal): %s", err)
+
+    async def _async_save_energy_totals(self) -> None:
+        """Save energy retention dicts to HA storage."""
+        try:
+            await self._energy_store.async_save({
+                "lifetime_totals": dict(self._retained_lifetime_totals),
+                "daily_totals": dict(self._retained_daily_totals),
+                "daily_totals_date": datetime.now().date().isoformat(),
+            })
+        except Exception as err:
+            _LOGGER.debug("Failed to save energy totals: %s", err)
+
     def _read_device_identification(self):
         """Read device identification info (serial, firmware, inverter type)."""
         try:

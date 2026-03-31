@@ -4,6 +4,68 @@
 
 ---
 
+## v0.6.6b3
+
+- Night-time offline · #226 WIT battery_current · #224 MIN TL-XH via_device + log noise + spurious control_authority · #203 WIT control_authority side-effects
+
+### 🔧 Fix — Sensors Show 0 Instead of Unavailable When Inverter is Off at Night
+
+When the RS485-to-TCP adapter was online but the inverter was sleeping (typical night-time), `TOTAL_INCREASING` energy sensors reported `0` rather than going unavailable. This caused HA's Energy Dashboard to record phantom counter resets and corrupted long-term statistics.
+
+**Root causes fixed:**
+
+1. **Empty register list not treated as failure** (`growatt_modbus.py`): When the adapter returns a valid TCP frame with an empty register list, the read loop silently populated nothing in the cache, causing all values to default to `0.0` via `or 0.0` fallbacks. The coordinator saw non-None data, set `_inverter_online = True`, and sensors reported zeros. Empty and short-count responses are now rejected as failures, correctly triggering offline behaviour.
+
+2. **Energy retention lost on HA restart** (`coordinator.py`): `_retained_lifetime_totals` and `_retained_daily_totals` were plain in-memory dicts, cleared on every restart. After a night restart, there was no protection against a dormant inverter returning zeros. These dicts are now persisted to HA storage (`.storage/growatt_modbus.<entry_id>_energy_totals`) — lifetime totals always restored, daily totals only if saved the same calendar day.
+
+3. **Wrong field names in stale-data debounce reset** (`coordinator.py`): The wakeup debounce reset was assigning to `data.battery_charge_today` / `data.battery_discharge_today` which don't exist in `GrowattData`. Corrected to `charge_energy_today` / `discharge_energy_today`.
+
+4. **Battery energy fields missing from midnight reset blocks** (`coordinator.py`): Both midnight reset paths now also zero `charge_energy_today`, `discharge_energy_today`, `ac_charge_energy_today`, `ac_discharge_energy_today`, `op_discharge_energy_today`.
+
+---
+
+### 🔧 Fix — WIT Battery Current Always Shows 0 (Issue #226)
+
+`battery_current` on WIT inverters has shown `0` since approximately v0.5.4. WIT's battery current register is at address **8035** (the 8000–8124 range). The battery register range detection scored only VPP (≥31000) and fallback (1000–3999) addresses, so 8035 was never scored. Detected range = `'vpp'`, filter `addr >= 31000` — register 8035 dropped → `battery_current = 0`.
+
+**Fix** (`growatt_modbus.py`):
+- `_detect_battery_register_range()`: 8000–8999 addresses now count as VPP-tier (WIT's native battery range)
+- `_find_register_by_name_with_fallback()`: after the primary range filter returns empty, the 8000-range is checked as a secondary fallback for all range modes
+
+This also restores the battery power scale auto-detection which requires `battery_current != 0`.
+
+The 20% power overestimation reported in the same issue is **not yet addressed** — raw register scan data is needed to confirm whether it is a scale factor error or a different root cause.
+
+---
+
+### 🔧 Fix — MIN TL-XH: Spurious Modbus Warnings at Startup + via_device Error (Issue #224)
+
+**Two separate issues:**
+
+**A) Startup Modbus warnings for 31000-range registers:**
+MIN TL-XH models receive `ExceptionResponse(exception_code=1)` (Illegal Function) for optional VPP registers (31000-31003, 31200-31222, etc.) that don't exist on the hardware. These errors were already suppressed after the first attempt via `_failed_optional_ranges`, but the first-attempt log message was at WARNING level. A new `log_errors` parameter on `read_input_registers()` downgrades the error to DEBUG for optional (non-critical) register ranges, eliminating the startup noise.
+
+**B) `via_device` race condition (breaking in HA 2025.12+):**
+Sub-devices (Solar, Grid, Load, Battery) reference `via_device = (DOMAIN, f"{entry_id}_inverter")`. The parent inverter device was created implicitly and could be missing from the HA device registry when sub-device sensors were registered, causing the "referencing a non-existing via_device" error. Fixed in `__init__.py` by explicitly pre-creating the parent inverter device using `device_registry.async_get_or_create()` before `async_forward_entry_setups()`.
+
+---
+
+### 🔧 Fix — Control Authority Selector Shown on Unsupported Hardware (Issue #224)
+
+`control_authority` (register 30100) is defined in several profiles (MIN TL-XH, MIN TL-X, SPH-TL3, MIC) as a VPP master-enable control. However, many units in these families do not implement the VPP 2.01 control register range in firmware, causing the select entity to appear in HA while any write would silently fail with an Illegal Function error.
+
+**Fix:** The `control_authority` select entity is now gated on a live hardware probe — the same pattern already used for `vpp_export_limit_enable`. A new `vpp_control_authority_available` flag is set only when register 30100 returns a valid response at startup. If the register is unresponsive, the entity is not created, and any pre-existing stale entity from a prior configuration is automatically removed from the entity registry on reload.
+
+---
+
+### 🔧 Fix — WIT: Disabling Control Authority Resets Export Limit Mode (Issue #203)
+
+Disabling `control_authority` (register 30100 = 0) on WIT inverters transiently resets register 122 (`export_limit_mode`) to 0 as a hardware side-effect. On newer firmware (VPP V1.39) the inverter auto-restores the value when control authority is re-enabled, but older firmware does not — silently clearing the export limit configuration.
+
+**Fix** (`select.py`, `coordinator.py`): When writing `control_authority = Disabled`, the integration now reads and saves the current value of register 122 before the write. When `control_authority = Enabled` is written and verified, the saved value is automatically restored (with a 300ms delay to allow the inverter to process the control authority change). Only applies to WIT profiles.
+
+---
+
 ## v0.6.6b2
 
 - #206 · #212 · #214 · #204 · #18 · #131 · VPP sensor gating · Scanner improvements · Write verification · Cloud override detection · SPE profile
