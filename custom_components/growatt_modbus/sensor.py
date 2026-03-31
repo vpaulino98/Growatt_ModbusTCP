@@ -1027,6 +1027,7 @@ class GrowattModbusSensor(CoordinatorEntity, SensorEntity):
         invert_grid_power = self._config_entry.options.get(CONF_INVERT_GRID_POWER, False)
         inverter_series = self._config_entry.data.get(CONF_INVERTER_SERIES, "").lower()
         is_sph_family = inverter_series.startswith("sph_")
+        is_min_tlxh_family = inverter_series.startswith("min_tl_xh_")
         
         # Special handling for calculated sensors
         if self._sensor_def.get("attr") == "calculated":
@@ -1236,10 +1237,10 @@ class GrowattModbusSensor(CoordinatorEntity, SensorEntity):
                 # Other models: energy_from_grid_today
 
                 # Check if inverter has hardware import energy register
-                # SPH family uses "energy_to_user" for import, while non-SPH models
-                # should not treat energy_to_user as grid import
+                # SPH family and MIN TL-XH use "energy_to_user" for import;
+                # other models use "energy_from_grid"
                 has_hardware_import = hasattr(data, "energy_from_grid_today") or (
-                    is_sph_family and hasattr(data, "energy_to_user_today")
+                    (is_sph_family or is_min_tlxh_family) and hasattr(data, "energy_to_user_today")
                 )
 
                 if has_hardware_import:
@@ -1265,10 +1266,10 @@ class GrowattModbusSensor(CoordinatorEntity, SensorEntity):
                 # Other models: energy_from_grid_total
 
                 # Check if inverter has hardware import energy register
-                # SPH family uses "energy_to_user" for import, while non-SPH models
-                # should not treat energy_to_user as grid import
+                # SPH family and MIN TL-XH use "energy_to_user" for import;
+                # other models use "energy_from_grid"
                 has_hardware_import = hasattr(data, "energy_from_grid_total") or (
-                    is_sph_family and hasattr(data, "energy_to_user_total")
+                    (is_sph_family or is_min_tlxh_family) and hasattr(data, "energy_to_user_total")
                 )
 
                 if has_hardware_import:
@@ -1315,7 +1316,23 @@ class GrowattModbusSensor(CoordinatorEntity, SensorEntity):
             pv_energy_today = round(max(0.0, pv_energy_today), 2)
 
             return self.coordinator.get_sensor_value(self._sensor_key, pv_energy_today)
-        
+
+        # MIN TL-XH energy_total register (3051/3052) counts all inverter AC output including
+        # battery discharge. Derive PV-only lifetime total from energy balance using the
+        # lifetime battery charge/discharge registers (31210/31211 and 31212/31213).
+        if self._sensor_key == "energy_total" and is_min_tlxh_family:
+            load_total = getattr(data, "load_energy_total", 0.0)
+            grid_import = getattr(data, "energy_to_user_total", 0.0)
+            grid_export = getattr(data, "energy_to_grid_total", 0.0)
+            battery_charge = getattr(data, "charge_energy_total", 0.0)
+            battery_discharge = getattr(data, "discharge_energy_total", 0.0)
+
+            if battery_charge > 0 or battery_discharge > 0:
+                pv_energy_total = load_total + battery_charge + grid_export - grid_import - battery_discharge
+                pv_energy_total = round(max(0.0, pv_energy_total), 1)
+                return self.coordinator.get_sensor_value(self._sensor_key, pv_energy_total)
+            # If lifetime battery registers unavailable, fall through to raw register value
+
         # Regular sensor - get value from data attribute
         value = getattr(data, self._sensor_def["attr"], None)
         

@@ -364,9 +364,15 @@ MIN_TL_XH_3000_10000_V201 = {
         31207: {'name': 'discharge_energy_today_low', 'scale': 1, 'unit': '', 'pair': 31206, 'combined_scale': 0.1, 'combined_unit': 'kWh', 'desc': 'Battery discharge energy today'},
         31208: {'name': 'discharge_power_high', 'scale': 1, 'unit': '', 'pair': 31209, 'desc': 'Battery discharge power HIGH'},
         31209: {'name': 'discharge_power_low', 'scale': 1, 'unit': '', 'pair': 31208, 'combined_scale': 0.1, 'combined_unit': 'W', 'signed': True, 'desc': 'Battery discharge power (signed: positive=discharging, negative=charging)'},
+        # Battery lifetime energy totals (confirmed via diagnostic scan)
+        31210: {'name': 'charge_energy_total_high', 'scale': 1, 'unit': '', 'pair': 31211, 'desc': 'Battery charge energy total HIGH'},
+        31211: {'name': 'charge_energy_total_low', 'scale': 1, 'unit': '', 'pair': 31210, 'combined_scale': 0.1, 'combined_unit': 'kWh', 'desc': 'Battery charge energy total (lifetime)'},
+        31212: {'name': 'discharge_energy_total_high', 'scale': 1, 'unit': '', 'pair': 31213, 'desc': 'Battery discharge energy total HIGH'},
+        31213: {'name': 'discharge_energy_total_low', 'scale': 1, 'unit': '', 'pair': 31212, 'combined_scale': 0.1, 'combined_unit': 'kWh', 'desc': 'Battery discharge energy total (lifetime)'},
         31214: {'name': 'battery_voltage_vpp', 'scale': 0.1, 'unit': 'V', 'signed': True, 'desc': 'Battery voltage (VPP range - not used on MIN TL-XH, use 3169 instead)'},
         31215: {'name': 'battery_current_vpp', 'scale': 0.1, 'unit': 'A', 'signed': True, 'desc': 'Battery current (VPP range - not used on MIN TL-XH, use 3170 instead)'},
         31217: {'name': 'battery_soc_vpp', 'scale': 1, 'unit': '%', 'desc': 'Battery SOC (VPP range - not used on MIN TL-XH, use 3171 instead)'},
+        31218: {'name': 'battery_soh', 'scale': 1, 'unit': '%', 'desc': 'Battery state of health'},
         31222: {'name': 'battery_temp_vpp', 'scale': 0.1, 'unit': '°C', 'signed': True, 'desc': 'Battery temp (VPP range - not used on MIN TL-XH, use 3176 instead)'},
 
         # Battery power (calculated from charge/discharge)
