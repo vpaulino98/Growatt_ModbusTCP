@@ -10,9 +10,30 @@ The integration exposes inverter control via standard Home Assistant **Select** 
 
 Two fundamentally different control models are used across the supported inverter families:
 
+```mermaid
+graph LR
+    HA["🏠 HA Select / Number\nentity write"]
+
+    HA -->|"SPH · SPF · MOD"| PERSIST
+    HA -->|"WIT"| VPP
+
+    PERSIST["📝 Persistent Register Write\n────────────────────\nHolding register 1000–3999\nTakes effect immediately\nSurvives inverter restart\nSet once and forget"]
+
+    VPP["⏱️ VPP Time-Limited Override\n────────────────────\nRegister 30xxx range\nActivates timed override\nExpires on duration or HA restart\nInverter returns to TOU schedule"]
+
+    PERSIST --> REG["✅ Register verified\nby read-back\nafter write"]
+    VPP --> REG
+
+    style PERSIST fill:#e8f5e9
+    style VPP fill:#e3f2fd
+    style REG fill:#f5f5f5
+```
+
+All writes use **read-back verification** — after writing, the integration reads the register back to confirm the value stuck. If a ShineWiFi dongle overwrites the value on the next poll cycle, a persistent notification is shown in the HA UI.
+
 ### Persistent Holding Register Writes (SPH, SPF, MOD)
 
-- **How it works:** Write a value to a Modbus holding register. The setting takes effect immediately and persists until changed again (survives inverter restarts).
+- **How it works:** Write a value to a Modbus holding register. The setting takes effect immediately and persists until changed again — it survives inverter restarts.
 - **When to use:** Changing operating mode, charge/discharge limits, AC charge enable. Set once and forget.
 - **Risk level:** Low. Standard Modbus write to a well-documented register.
 
@@ -130,16 +151,11 @@ See [WIT Control Guide](WIT_CONTROL_GUIDE.md) for full protocol documentation.
 
 **Applies to:** MOD 10000TL3-XH (VPP V2.01, DTC 5400)
 
-**Control method:** N/A — battery control holding registers not yet confirmed
+**Control method:** Not yet available — battery control holding registers not confirmed
 
-**Current status:**
+> **Status (as of v0.6.6):** Hardware register scanning of a MOD 10000TL3-XH (Issue #131, Feb 2026) showed the storage range 1000–1124 all zeros, VPP register 30099 = 0, and legacy WIT registers 201/202/203 ineffective. The correct writable control registers for MOD battery management have not been identified. Battery **monitoring** is fully available; battery **control** is deferred. If you have a MOD and can share register scan data, please open an issue.
 
-Hardware register scanning (Issue #131, MOD 10000TL3-XH, Feb 2026) showed:
-- Storage range 1000–1124: all zeros — SPH-style control registers not active
-- VPP register 30099 = 0: VPP protocol not available
-- Legacy WIT registers 201/202/203 = 0: not effective for battery control
-
-Battery control for MOD is deferred pending identification and confirmation of the correct holding registers. Battery **monitoring** sensors are fully available (see below).
+Battery **monitoring** sensors are fully available (see below).
 
 **Battery monitoring sensors available:**
 
