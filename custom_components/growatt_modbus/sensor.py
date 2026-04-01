@@ -1266,10 +1266,12 @@ class GrowattModbusSensor(CoordinatorEntity, SensorEntity):
                 # Other models: energy_from_grid_total
 
                 # Check if inverter has hardware import energy register
-                # SPH family and MIN TL-XH use "energy_to_user" for import;
-                # other models use "energy_from_grid"
+                # SPH family: energy_to_user_total (hardware bidirectional meter, updates in real-time)
+                # MIN TL-XH: energy_to_user_total (reg 3070) only updates at end-of-day by firmware,
+                #   so use calculation formula instead for real-time tracking
+                # Other models: energy_from_grid_total
                 has_hardware_import = hasattr(data, "energy_from_grid_total") or (
-                    (is_sph_family or is_min_tlxh_family) and hasattr(data, "energy_to_user_total")
+                    is_sph_family and hasattr(data, "energy_to_user_total")
                 )
 
                 if has_hardware_import:

@@ -309,9 +309,6 @@ MIN_TL_XH_3000_10000_V201 = {
         3105: {'name': 'fault_code', 'scale': 1, 'unit': '', 'desc': 'Main fault code'},
         3106: {'name': 'warning_code', 'scale': 1, 'unit': '', 'desc': 'Main warning code'},
 
-        # Battery Extended Diagnostics
-        3136: {'name': 'battery_bms_temp', 'scale': 0.1, 'unit': '°C', 'signed': True, 'desc': 'Battery BMS/module temperature'},
-
         # === BATTERY STATE REGISTERS (3169-3176) - PRIMARY for MIN TL-XH ===
         # MIN TL-XH uses 3000+ range for battery state (not VPP 31200+ range)
         # Similar to MOD series layout
@@ -364,11 +361,14 @@ MIN_TL_XH_3000_10000_V201 = {
         31207: {'name': 'discharge_energy_today_low', 'scale': 1, 'unit': '', 'pair': 31206, 'combined_scale': 0.1, 'combined_unit': 'kWh', 'desc': 'Battery discharge energy today'},
         31208: {'name': 'discharge_power_high', 'scale': 1, 'unit': '', 'pair': 31209, 'desc': 'Battery discharge power HIGH'},
         31209: {'name': 'discharge_power_low', 'scale': 1, 'unit': '', 'pair': 31208, 'combined_scale': 0.1, 'combined_unit': 'W', 'signed': True, 'desc': 'Battery discharge power (signed: positive=discharging, negative=charging)'},
-        # Battery lifetime energy totals (confirmed via diagnostic scan)
-        31210: {'name': 'charge_energy_total_high', 'scale': 1, 'unit': '', 'pair': 31211, 'desc': 'Battery charge energy total HIGH'},
-        31211: {'name': 'charge_energy_total_low', 'scale': 1, 'unit': '', 'pair': 31210, 'combined_scale': 0.1, 'combined_unit': 'kWh', 'desc': 'Battery charge energy total (lifetime)'},
-        31212: {'name': 'discharge_energy_total_high', 'scale': 1, 'unit': '', 'pair': 31213, 'desc': 'Battery discharge energy total HIGH'},
-        31213: {'name': 'discharge_energy_total_low', 'scale': 1, 'unit': '', 'pair': 31212, 'combined_scale': 0.1, 'combined_unit': 'kWh', 'desc': 'Battery discharge energy total (lifetime)'},
+        # Battery lifetime energy totals (VPP range - renamed with _vpp_ suffix to avoid conflicting
+        # with the confirmed 3000-range registers 3131/3132 and 3127/3128 which have the same logical
+        # name. The coordinator looks for 'charge_energy_total_low' (not '_vpp_'), so these are not
+        # read directly and do not interfere with battery range detection.)
+        31210: {'name': 'charge_energy_total_vpp_high', 'scale': 1, 'unit': '', 'pair': 31211, 'desc': 'Battery charge energy total HIGH (VPP range, not read by coordinator - use 3131/3132)'},
+        31211: {'name': 'charge_energy_total_vpp_low', 'scale': 1, 'unit': '', 'pair': 31210, 'combined_scale': 0.1, 'combined_unit': 'kWh', 'desc': 'Battery charge energy total (VPP range, not read by coordinator - use 3131/3132)'},
+        31212: {'name': 'discharge_energy_total_vpp_high', 'scale': 1, 'unit': '', 'pair': 31213, 'desc': 'Battery discharge energy total HIGH (VPP range, not read by coordinator - use 3127/3128)'},
+        31213: {'name': 'discharge_energy_total_vpp_low', 'scale': 1, 'unit': '', 'pair': 31212, 'combined_scale': 0.1, 'combined_unit': 'kWh', 'desc': 'Battery discharge energy total (VPP range, not read by coordinator - use 3127/3128)'},
         31214: {'name': 'battery_voltage_vpp', 'scale': 0.1, 'unit': 'V', 'signed': True, 'desc': 'Battery voltage (VPP range - not used on MIN TL-XH, use 3169 instead)'},
         31215: {'name': 'battery_current_vpp', 'scale': 0.1, 'unit': 'A', 'signed': True, 'desc': 'Battery current (VPP range - not used on MIN TL-XH, use 3170 instead)'},
         31217: {'name': 'battery_soc_vpp', 'scale': 1, 'unit': '%', 'desc': 'Battery SOC (VPP range - not used on MIN TL-XH, use 3171 instead)'},
