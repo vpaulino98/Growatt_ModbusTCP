@@ -942,20 +942,39 @@ class GrowattModbus:
 
             is_wit_profile = 'WIT' in self.register_map['name']
             logger.debug(f"Reading 8000 range ({min_addr_8000}-{max_addr_8000}, {count_8000} registers)")
+            # Critical WIT battery registers to retry individually on block failure
+            _CRITICAL_8000 = [8034, 8035, 8093, 8094, 8095]
+
             if count_8000 > 125:
                 for chunk_start in range(min_addr_8000, max_addr_8000 + 1, 125):
                     chunk_count = min(125, max_addr_8000 - chunk_start + 1)
+                    chunk_end = chunk_start + chunk_count - 1
                     registers = self.read_input_registers(chunk_start, chunk_count)
                     if registers is None:
-                        log_level = "warning" if is_wit_profile else "debug"
-                        logger.warning(f"Failed to read 8000 block ({chunk_start}-{chunk_start+chunk_count-1}) - will retry next poll")
+                        logger.warning(f"Failed to read 8000 block ({chunk_start}-{chunk_end}) - retrying critical registers individually")
+                        for critical_addr in _CRITICAL_8000:
+                            if chunk_start <= critical_addr <= chunk_end:
+                                single = self.read_input_registers(critical_addr, 1)
+                                if single:
+                                    self._register_cache[critical_addr] = single[0]
+                                    logger.debug(f"  8000-range retry OK: reg {critical_addr} = {single[0]}")
+                                else:
+                                    logger.debug(f"  8000-range retry failed: reg {critical_addr}")
                     else:
                         for i, value in enumerate(registers):
                             self._register_cache[chunk_start + i] = value
             else:
                 registers = self.read_input_registers(min_addr_8000, count_8000)
                 if registers is None:
-                    logger.warning(f"Failed to read 8000 register block ({min_addr_8000}-{max_addr_8000}) - will retry next poll")
+                    logger.warning(f"Failed to read 8000 register block ({min_addr_8000}-{max_addr_8000}) - retrying critical battery registers individually")
+                    for critical_addr in _CRITICAL_8000:
+                        if min_addr_8000 <= critical_addr <= max_addr_8000:
+                            single = self.read_input_registers(critical_addr, 1)
+                            if single:
+                                self._register_cache[critical_addr] = single[0]
+                                logger.debug(f"  8000-range retry OK: reg {critical_addr} = {single[0]}")
+                            else:
+                                logger.debug(f"  8000-range retry failed: reg {critical_addr}")
                 else:
                     for i, value in enumerate(registers):
                         self._register_cache[min_addr_8000 + i] = value

@@ -119,6 +119,7 @@ async def async_setup_entry(
 class GrowattGenericSelect(CoordinatorEntity, SelectEntity):
     """Generic select entity for any control with options."""
 
+    _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(
@@ -137,8 +138,7 @@ class GrowattGenericSelect(CoordinatorEntity, SelectEntity):
 
         # Generate friendly name (e.g., "output_config" -> "Output Config")
         friendly_name = control_name.replace('_', ' ').title()
-        entry_name = config_entry.data.get("name", config_entry.title)
-        self._attr_name = f"{entry_name} {friendly_name}"
+        self._attr_name = friendly_name
         self._attr_unique_id = f"{config_entry.entry_id}_{control_name}"
 
         # Set icon based on control type

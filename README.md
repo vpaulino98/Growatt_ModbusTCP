@@ -1,7 +1,7 @@
 # Growatt Modbus Integration for Home Assistant ☀️
 
 ![HACS Badge](https://img.shields.io/badge/HACS-Custom-orange.svg)
-![Version](https://img.shields.io/badge/Version-0.6.6b3-blue.svg)
+![Version](https://img.shields.io/badge/Version-0.6.6-blue.svg)
 [![GitHub Issues](https://img.shields.io/github/issues/0xAHA/Growatt_ModbusTCP.svg)](https://github.com/0xAHA/Growatt_ModbusTCP/issues)
 [![GitHub Stars](https://img.shields.io/github/stars/0xAHA/Growatt_ModbusTCP.svg?style=social)](https://github.com/0xAHA/Growatt_ModbusTCP)
 
@@ -25,13 +25,14 @@ When you add the integration, it creates **up to five devices** in Home Assistan
 
 ![Device Hierarchy](docs/images/device-hierarchy.svg)
 
-| Device | Always present? | Key entities |
-|--------|----------------|--------------|
-| **Inverter** | Yes | Status, inverter temp, fault code, firmware version |
-| **Solar** | Yes | `pv1_power`, `solar_total_power`, `energy_today`, `energy_total` |
-| **Grid** | Yes | `grid_export_power`, `grid_import_power`, `energy_to_grid_today` |
-| **Load** | Yes | `house_consumption`, `power_to_load`, `load_energy_today` |
-| **Battery** | Hybrid models only | `battery_soc`, `battery_power`, `charge_energy_today` |
+
+| Device       | Always present?    | Key entities                                                     |
+| -------------- | -------------------- | ------------------------------------------------------------------ |
+| **Inverter** | Yes                | Status, inverter temp, fault code, firmware version              |
+| **Solar**    | Yes                | `pv1_power`, `solar_total_power`, `energy_today`, `energy_total` |
+| **Grid**     | Yes                | `grid_export_power`, `grid_import_power`, `energy_to_grid_today` |
+| **Load**     | Yes                | `house_consumption`, `power_to_load`, `load_energy_today`        |
+| **Battery**  | Hybrid models only | `battery_soc`, `battery_power`, `charge_energy_today`            |
 
 > Battery device is automatically created when a hybrid or off-grid profile is selected. It will not appear for grid-tied-only models (MIC, MIN TL-X, MID).
 
@@ -47,28 +48,29 @@ Understanding which sensor measures what is the most common source of confusion.
 
 ### Sensor Glossary
 
-| Sensor | What it measures | Sign / direction | HA Energy Dashboard |
-|--------|-----------------|-----------------|---------------------|
-| `pv1_power` / `pv2_power` / `pv3_power` | Individual PV string output | Always ≥ 0 W | — |
-| `solar_total_power` | Combined output of all PV strings | Always ≥ 0 W | — |
-| `energy_today` | PV energy generated today | Always ≥ 0 kWh | Solar production |
-| `energy_total` | PV energy generated lifetime | Always ≥ 0 kWh | Solar production |
-| `grid_export_power` | Power currently being sent to grid | Always ≥ 0 W | Return to grid |
-| `grid_import_power` | Power currently being drawn from grid | Always ≥ 0 W | Grid consumption |
-| `power_to_grid` | Raw bidirectional grid register | **+ export / − import** | (use export/import above) |
-| `power_to_user` | AC power measured at grid/load boundary (register value) | Always ≥ 0 W | Load monitoring |
-| `power_to_load` | AC output power at inverter terminals (register value) | Always ≥ 0 W | — |
-| `house_consumption` | **Calculated** total house draw = solar used + grid imported | Always ≥ 0 W | Individual consumption |
-| `self_consumption` | Solar power actually used on-site (not exported) | Always ≥ 0 W | Efficiency tracking |
-| `battery_power` | Battery charge/discharge power | **+ charging / − discharging** | Battery storage |
-| `charge_power` | Battery charging power only | Always ≥ 0 W (0 while discharging) | — |
-| `discharge_power` | Battery discharging power only | Always ≥ 0 W (0 while charging) | — |
-| `battery_soc` | State of charge | 0–100 % | Battery charge level |
-| `charge_energy_today` | Energy delivered into battery today | Always ≥ 0 kWh | Battery in |
-| `discharge_energy_today` | Energy delivered from battery today | Always ≥ 0 kWh | Battery out |
-| `ac_charge_energy_today` | Grid energy used to charge battery today | Always ≥ 0 kWh | Grid → battery cost |
-| `energy_to_grid_today` | Total energy exported to grid today | Always ≥ 0 kWh | Return to grid |
-| `load_energy_today` | Total energy consumed by house today | Always ≥ 0 kWh | Individual consumption |
+
+| Sensor                                  | What it measures                                             | Sign / direction                    | HA Energy Dashboard       |
+| ----------------------------------------- | -------------------------------------------------------------- | ------------------------------------- | --------------------------- |
+| `pv1_power` / `pv2_power` / `pv3_power` | Individual PV string output                                  | Always ≥ 0 W                       | —                        |
+| `solar_total_power`                     | Combined output of all PV strings                            | Always ≥ 0 W                       | —                        |
+| `energy_today`                          | PV energy generated today                                    | Always ≥ 0 kWh                     | Solar production          |
+| `energy_total`                          | PV energy generated lifetime                                 | Always ≥ 0 kWh                     | Solar production          |
+| `grid_export_power`                     | Power currently being sent to grid                           | Always ≥ 0 W                       | Return to grid            |
+| `grid_import_power`                     | Power currently being drawn from grid                        | Always ≥ 0 W                       | Grid consumption          |
+| `power_to_grid`                         | Raw bidirectional grid register                              | **+ export / − import**            | (use export/import above) |
+| `power_to_user`                         | AC power measured at grid/load boundary (register value)     | Always ≥ 0 W                       | Load monitoring           |
+| `power_to_load`                         | AC output power at inverter terminals (register value)       | Always ≥ 0 W                       | —                        |
+| `house_consumption`                     | **Calculated** total house draw = solar used + grid imported | Always ≥ 0 W                       | Individual consumption    |
+| `self_consumption`                      | Solar power actually used on-site (not exported)             | Always ≥ 0 W                       | Efficiency tracking       |
+| `battery_power`                         | Battery charge/discharge power                               | **+ charging / − discharging**     | Battery storage           |
+| `charge_power`                          | Battery charging power only                                  | Always ≥ 0 W (0 while discharging) | —                        |
+| `discharge_power`                       | Battery discharging power only                               | Always ≥ 0 W (0 while charging)    | —                        |
+| `battery_soc`                           | State of charge                                              | 0–100 %                            | Battery charge level      |
+| `charge_energy_today`                   | Energy delivered into battery today                          | Always ≥ 0 kWh                     | Battery in                |
+| `discharge_energy_today`                | Energy delivered from battery today                          | Always ≥ 0 kWh                     | Battery out               |
+| `ac_charge_energy_today`                | Grid energy used to charge battery today                     | Always ≥ 0 kWh                     | Grid → battery cost      |
+| `energy_to_grid_today`                  | Total energy exported to grid today                          | Always ≥ 0 kWh                     | Return to grid            |
+| `load_energy_today`                     | Total energy consumed by house today                         | Always ≥ 0 kWh                     | Individual consumption    |
 
 > **`house_consumption` vs `power_to_user`:** `power_to_user` is a raw hardware register (AC power at the grid/load boundary). `house_consumption` is a calculated value: solar produced + grid imported − grid exported. Use `house_consumption` in the Energy Dashboard for accurate whole-home consumption.
 
@@ -80,21 +82,22 @@ Understanding which sensor measures what is the most common source of confusion.
 
 ## Supported Models
 
-| Family | Type | Phase | Battery | Auto-detect | Tested |
-|--------|------|-------|---------|-------------|--------|
-| **MIC** 0.6–3.3kW | Grid-tied | Single | — | Manual | ✅ |
-| **MID** 15–25kW | Grid-tied | Three | — | VPP + Legacy | ⚠️ |
-| **MIN** 3–6kW TL-X | Grid-tied | Single | — | VPP + Legacy | ✅ |
-| **MIN** 7–10kW TL-X | Grid-tied | Single | — | VPP + Legacy | ✅ |
-| **MIN TL-XH** 3–10kW | Hybrid | Single | Yes | VPP | ✅ |
-| **MOD** 6–15kW TL3-XH | Hybrid | Three | Yes | VPP + Legacy | ✅ |
-| **SPE** 8–12kW ES | Hybrid | Single | Yes | Model name | ✅ |
-| **SPF** 3–6kW ES PLUS | Off-grid | Single | Yes | Manual | ✅ |
-| **SPH** 3–6kW | Hybrid | Single | Yes | VPP + Legacy | ✅ |
-| **SPH** 7–10kW | Hybrid | Single | Yes | VPP + Legacy | ✅ |
-| **SPH/SPM** 8–10kW HU | Hybrid | Single | Yes | VPP + Legacy | ⚠️ |
-| **SPH-TL3** 3–10kW | Hybrid | Three | Yes | VPP + Legacy | ✅ |
-| **WIT** 4–15kW TL3 | Hybrid | Three | Yes | VPP v2.02 | ✅ |
+
+| Family                 | Type      | Phase  | Battery | Auto-detect  | Tested |
+| ------------------------ | ----------- | -------- | --------- | -------------- | -------- |
+| **MIC** 0.6–3.3kW     | Grid-tied | Single | —      | Manual       | ✅     |
+| **MID** 15–25kW       | Grid-tied | Three  | —      | VPP + Legacy | ⚠️   |
+| **MIN** 3–6kW TL-X    | Grid-tied | Single | —      | VPP + Legacy | ✅     |
+| **MIN** 7–10kW TL-X   | Grid-tied | Single | —      | VPP + Legacy | ✅     |
+| **MIN TL-XH** 3–10kW  | Hybrid    | Single | Yes     | VPP          | ✅     |
+| **MOD** 6–15kW TL3-XH | Hybrid    | Three  | Yes     | VPP + Legacy | ✅     |
+| **SPE** 8–12kW ES     | Hybrid    | Single | Yes     | Model name   | ✅     |
+| **SPF** 3–6kW ES PLUS | Off-grid  | Single | Yes     | Manual       | ✅     |
+| **SPH** 3–6kW         | Hybrid    | Single | Yes     | VPP + Legacy | ✅     |
+| **SPH** 7–10kW        | Hybrid    | Single | Yes     | VPP + Legacy | ✅     |
+| **SPH/SPM** 8–10kW HU | Hybrid    | Single | Yes     | VPP + Legacy | ⚠️   |
+| **SPH-TL3** 3–10kW    | Hybrid    | Three  | Yes     | VPP + Legacy | ✅     |
+| **WIT** 4–15kW TL3    | Hybrid    | Three  | Yes     | VPP v2.02    | ✅     |
 
 ✅ Tested with real hardware · ⚠️ Profile from documentation, community validation welcome
 
@@ -108,23 +111,25 @@ Understanding which sensor measures what is the most common source of confusion.
 
 ### Connection Options
 
-| Adapter | Interface | Settings |
-|---------|-----------|----------|
-| **EW11** | TCP/WiFi | TCP Server, 9600 baud, port 502 |
-| **USR-W630** | TCP/WiFi | Modbus TCP Gateway mode |
-| **USR-TCP232-410s** | TCP | TCP Server, 9600 baud, port 502 |
-| **Waveshare RS485-to-ETH** | TCP | 9600 8N1, port 502, RFC2217: On |
-| **Any RS485-to-USB** | Serial | `/dev/ttyUSB0` or `COM3`, 9600 baud |
+
+| Adapter                    | Interface | Settings                            |
+| ---------------------------- | ----------- | ------------------------------------- |
+| **EW11**                   | TCP/WiFi  | TCP Server, 9600 baud, port 502     |
+| **USR-W630**               | TCP/WiFi  | Modbus TCP Gateway mode             |
+| **USR-TCP232-410s**        | TCP       | TCP Server, 9600 baud, port 502     |
+| **Waveshare RS485-to-ETH** | TCP       | 9600 8N1, port 502, RFC2217: On     |
+| **Any RS485-to-USB**       | Serial    | `/dev/ttyUSB0` or `COM3`, 9600 baud |
 
 ![System Topology](docs/images/system-topology.svg)
 
 **Inverter connector pinout:**
 
-| Connector | RS485+ (A) | RS485− (B) |
-|-----------|-----------|-----------|
-| 16-pin DRM/COM | Pin 3 | Pin 4 |
-| 4-pin COM | Pin 1 | Pin 2 |
-| RJ45 (485-3) | Pin 5 | Pin 1 |
+
+| Connector      | RS485+ (A) | RS485− (B) |
+| ---------------- | ------------ | ------------- |
+| 16-pin DRM/COM | Pin 3      | Pin 4       |
+| 4-pin COM      | Pin 1      | Pin 2       |
+| RJ45 (485-3)   | Pin 5      | Pin 1       |
 
 > If values look garbled or the connection is unstable, try swapping the A and B wires. Adapter labelling is not always consistent with the inverter's convention.
 
@@ -158,20 +163,22 @@ The config flow runs auto-detection automatically for VPP-capable inverters. For
 
 **Connection parameters:**
 
-| Parameter | TCP | Serial |
-|-----------|-----|--------|
-| Host / Device | IP address (e.g. `192.168.1.100`) | Path (e.g. `/dev/ttyUSB0`) |
-| Port / Baudrate | `502` | `9600` |
-| Slave ID | `1` (usually) | `1` (usually) |
+
+| Parameter       | TCP                              | Serial                    |
+| ----------------- | ---------------------------------- | --------------------------- |
+| Host / Device   | IP address (e.g.`192.168.1.100`) | Path (e.g.`/dev/ttyUSB0`) |
+| Port / Baudrate | `502`                            | `9600`                    |
+| Slave ID        | `1` (usually)                    | `1` (usually)             |
 
 ### Options (after setup)
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| Device Name | "Growatt" | Prefix for all sensor names |
-| Scan Interval | 30 s | Polling frequency (5–300 s) |
-| Connection Timeout | 10 s | Response timeout (1–60 s) |
-| Invert Grid Power | Auto | Fix backwards CT clamp |
+
+| Option             | Default   | Description                  |
+| -------------------- | ----------- | ------------------------------ |
+| Device Name        | "Growatt" | Prefix for all sensor names  |
+| Scan Interval      | 30 s      | Polling frequency (5–300 s) |
+| Connection Timeout | 10 s      | Response timeout (1–60 s)   |
+| Invert Grid Power  | Auto      | Fix backwards CT clamp       |
 
 ---
 
@@ -270,14 +277,15 @@ target:
 
 The integration pre-configures sensors with the correct `state_class` and `device_class` for the HA Energy Dashboard. Recommended mapping:
 
-| Dashboard slot | Sensor |
-|----------------|--------|
-| Solar production | `sensor.{name}_energy_total` |
-| Return to grid | `sensor.{name}_energy_to_grid_today` *(use total variant)* |
-| Grid consumption | `sensor.{name}_energy_to_user_today` *(use total variant)* |
-| Individual consumption | `sensor.{name}_load_energy_today` *(use total variant)* |
-| Battery in | `sensor.{name}_charge_energy_today` *(use total variant)* |
-| Battery out | `sensor.{name}_discharge_energy_today` *(use total variant)* |
+
+| Dashboard slot         | Sensor                                                       |
+| ------------------------ | -------------------------------------------------------------- |
+| Solar production       | `sensor.{name}_energy_total`                                 |
+| Return to grid         | `sensor.{name}_energy_to_grid_today` *(use total variant)*   |
+| Grid consumption       | `sensor.{name}_energy_to_user_today` *(use total variant)*   |
+| Individual consumption | `sensor.{name}_load_energy_today` *(use total variant)*      |
+| Battery in             | `sensor.{name}_charge_energy_today` *(use total variant)*    |
+| Battery out            | `sensor.{name}_discharge_energy_today` *(use total variant)* |
 
 > If grid values appear backwards in the Energy Dashboard, run the `detect_grid_orientation` service.
 

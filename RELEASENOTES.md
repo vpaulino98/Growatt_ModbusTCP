@@ -4,6 +4,121 @@
 
 ---
 
+## v0.6.7
+
+Issues: #231 · #226 · #228
+
+### Changes at a Glance
+
+- **Entity ID regression fixed (#231):** v0.6.6's sub-device change caused entity IDs to grow a double prefix (e.g., `sensor.growatt_modbus_grid_growatt_modbus_energy_to_grid_today`). IDs are now correct and short. **All existing entity IDs are automatically migrated on first load — no manual action needed**, but automations/dashboards using the old bugged IDs will need updating.
+- **WIT battery current no longer drops to 0 A when the 8000-range block read fails intermittently (#226)** — critical registers are now retried individually after a failed block read.
+- **MOD HU (MOD 12-KTL3-HU, MOD TL3-XH) improvements (#228):**
+  - `pv1_energy_today`, `pv2_energy_today`, and `pv_energy_total` sensors now work (registers were missing from MOD profile)
+  - `charge_stopped_soc`, `discharge_stopped_soc`, `charge_power_rate`, and `ac_charge_enable` controls added to MOD profile
+  - Battery power now sourced from VPP range (31200/31201) — more reliable than the intermittent 3000-range charge/discharge registers
+  - DTC code 5401 (MOD 12-KTL3-HU) added to auto-detection — fresh installs now select the correct Hybrid profile automatically
+
+---
+
+### ⚠️ Important Upgrade Note — Entity ID Changes (#231)
+
+**This release changes entity IDs for all sensors, controls, and binary sensors.**
+
+#### Background
+
+v0.6.6 introduced sub-devices (Solar, Grid, Load, Battery) so entities could be logically grouped in the Home Assistant device list. When an entity belongs to a sub-device, HA generates its entity ID by combining the sub-device slug with the entity name slug. This was unintentional at the time: because entity `_attr_name` still included the integration prefix ("Growatt Modbus …"), HA created IDs with a double prefix — for example:
+
+```text
+sensor.growatt_modbus_grid_growatt_modbus_energy_to_grid_today
+                         ↑ sub-device slug   ↑ entity name slug (still had prefix)
+```
+
+#### What the fix does
+
+Entity classes now set `has_entity_name = True` and use only the **short name** (e.g., "Energy to Grid Today"). HA then composes:
+
+```text
+{domain}.{device_slug}_{short_name_slug}
+sensor.growatt_modbus_grid_energy_to_grid_today
+```
+
+#### Automatic migration
+
+The integration migrates all existing entity IDs on first load using the entity registry (`unique_id` is the stable anchor — the entity's internal identity never changes, only its ID string). You will see log entries like:
+
+```text
+v0.6.7 entity ID migration: sensor.growatt_modbus_grid_growatt_modbus_energy_to_grid_today → sensor.growatt_modbus_grid_energy_to_grid_today
+```
+
+#### What you need to do
+
+**For most users: nothing.** HA will automatically update entity references in the Energy Dashboard and Lovelace cards that use entity IDs directly.
+
+**Check and update manually:**
+
+- Automations or scripts that reference entity IDs by string (not entity picker)
+- External integrations or Node-RED flows using the old IDs
+- Any custom Lovelace cards that hardcode entity IDs rather than using the entity picker
+
+#### New entity ID pattern (examples)
+
+| Entity | Old ID (v0.6.6 bugged) | New ID (v0.6.7) |
+| ------ | ---------------------- | --------------- |
+| Energy to Grid Today | `sensor.growatt_modbus_grid_growatt_modbus_energy_to_grid_today` | `sensor.growatt_modbus_grid_energy_to_grid_today` |
+| Battery SoC | `sensor.growatt_modbus_battery_growatt_modbus_battery_soc` | `sensor.growatt_modbus_battery_battery_soc` |
+| PV Energy Today | `sensor.growatt_modbus_solar_growatt_modbus_energy_today` | `sensor.growatt_modbus_solar_energy_today` |
+| House Consumption | `sensor.growatt_modbus_load_growatt_modbus_house_consumption` | `sensor.growatt_modbus_load_house_consumption` |
+| Inverter Status | `sensor.growatt_modbus_growatt_modbus_inverter_status` | `sensor.growatt_modbus_inverter_status` |
+
+> **Note:** If your integration name is not "Growatt Modbus" (e.g., you renamed it during setup), substitute your actual device name slug in the examples above.
+
+---
+
+### 🔧 Fix — WIT Battery Current Drops to 0 A on Intermittent Block Read Failure (#226)
+
+WIT inverters read battery registers from the 8000–8999 range in a single block. If that block read fails (intermittent RS485/TCP instability), all 8000-range registers are absent from the cache for that cycle. `battery_current` (register 8035) resolves to `None or 0.0 = 0.0`, so the entity shows 0 A — even when the battery is actively charging or discharging.
+
+**Fix (`growatt_modbus.py`):** After any failed 8000-range block read, the five most critical registers (8034 battery voltage, 8035 battery current, 8093–8095 battery SoC / charge state) are retried individually. If a single-register read succeeds, that value is placed in the cache and used for the cycle. A warning log is emitted on block failure; per-register retry results are logged at DEBUG level.
+
+---
+
+### 🔧 Fix — MOD HU: PV String Energy Sensors Always 0 (#228)
+
+`pv1_energy_today`, `pv2_energy_today`, and `pv_energy_total` were absent from the MOD TL3-XH hybrid profile. The corresponding registers (59/60, 63/64, 91/92) are in the base 0–124 scan range and respond correctly on MOD HU hardware (confirmed: 9.2 kWh, 10.4 kWh, 3445 kWh).
+
+**Fix (`profiles/mod.py`):** Registers 59/60, 63/64, and 91/92 added to `MOD_6000_15000TL3_XH` `input_registers`.
+
+---
+
+### 🔧 Fix — MOD HU: Battery Power Intermittently Shows 0 (#228)
+
+The 3000-range charge/discharge registers (3178–3181) used as the primary battery power source on MOD HU are unreliable — they intermittently return 0 during the same poll cycle in which `battery_power` at VPP registers 31200/31201 shows the correct value (+1130 W charging in scan #228-2).
+
+**Fix (`profiles/mod.py`):** Registers 31200/31201 renamed from `battery_power_vpp_high/low` to `battery_power_high/low`. With the `_vpp` suffix removed, the coordinator's standard fallback chain finds these registers as the primary signed battery power source. Charge/discharge power entities are then derived from the sign of `battery_power` — positive = charging, negative = discharging — consistent with the standard convention used by all other profiles.
+
+---
+
+### New — MOD HU: Charge/Discharge SOC Controls (#228)
+
+The following controls now appear on MOD Hybrid installs. All four holding registers were confirmed responding in scan #228:
+
+| Control | Register | Description |
+| ------- | -------- | ----------- |
+| Discharge Stopped SoC | 1071 | Minimum SoC before battery stops discharging |
+| Charge Power Rate | 1090 | Battery charge power rate limit (0–100%) |
+| Charge Stopped SoC | 1091 | SoC level at which battery stops charging |
+| AC Charge Enable | 1092 | Allow charging from the grid (AC source) |
+
+---
+
+### New — Auto-Detection: DTC Code 5401 (#228)
+
+DTC code 5401 (reported by MOD 12-KTL3-HU hardware) was not in the detection map. Fresh installs fell back to heuristic detection and selected the grid-tied MOD profile instead of the Hybrid profile.
+
+**Fix (`auto_detection.py`):** DTC 5401 now maps to `mod_6000_15000tl3_xh_v201` (same as DTC 5400).
+
+---
+
 ## v0.6.6
 
 Issues: #203 · #204 · #18 · #131 · #206 · #212 · #214 · #224 · #226

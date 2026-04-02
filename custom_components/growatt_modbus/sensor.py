@@ -964,6 +964,8 @@ async def async_setup_entry(
 class GrowattModbusSensor(CoordinatorEntity, SensorEntity):
     """Representation of a Growatt Modbus sensor."""
 
+    _attr_has_entity_name = True
+
     def __init__(
         self,
         coordinator: GrowattModbusCoordinator,
@@ -977,7 +979,7 @@ class GrowattModbusSensor(CoordinatorEntity, SensorEntity):
         self._config_entry = config_entry
         self._sensor_key = sensor_key
         self._sensor_def = sensor_def
-        self._attr_name = f"{config_entry.data['name']} {sensor_def['name']}"
+        self._attr_name = sensor_def['name']
         self._attr_unique_id = f"{config_entry.entry_id}_{sensor_key}"
 
         # Determine which device this sensor belongs to

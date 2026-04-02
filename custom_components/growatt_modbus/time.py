@@ -63,6 +63,7 @@ class GrowattGenericTime(CoordinatorEntity, TimeEntity):
     e.g. 06:00 = 0x0600 = 1536, 22:00 = 0x1600 = 5632.
     """
 
+    _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.CONFIG
     _attr_icon = "mdi:clock-outline"
 
@@ -80,8 +81,7 @@ class GrowattGenericTime(CoordinatorEntity, TimeEntity):
         self._control_config = control_config
 
         friendly_name = control_name.replace('_', ' ').title()
-        entry_name = config_entry.data.get("name", config_entry.title)
-        self._attr_name = f"{entry_name} {friendly_name}"
+        self._attr_name = friendly_name
         self._attr_unique_id = f"{config_entry.entry_id}_{control_name}"
 
     @property
