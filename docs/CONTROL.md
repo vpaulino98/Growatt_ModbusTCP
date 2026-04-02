@@ -10,24 +10,7 @@ The integration exposes inverter control via standard Home Assistant **Select** 
 
 Two fundamentally different control models are used across the supported inverter families:
 
-```mermaid
-graph LR
-    HA["🏠 HA Select / Number\nentity write"]
-
-    HA -->|"SPH · SPF · MOD"| PERSIST
-    HA -->|"WIT"| VPP
-
-    PERSIST["📝 Persistent Register Write\n────────────────────\nHolding register 1000–3999\nTakes effect immediately\nSurvives inverter restart\nSet once and forget"]
-
-    VPP["⏱️ VPP Time-Limited Override\n────────────────────\nRegister 30xxx range\nActivates timed override\nExpires on duration or HA restart\nInverter returns to TOU schedule"]
-
-    PERSIST --> REG["✅ Register verified\nby read-back\nafter write"]
-    VPP --> REG
-
-    style PERSIST fill:#e8f5e9
-    style VPP fill:#e3f2fd
-    style REG fill:#f5f5f5
-```
+![Control Architecture](images/control-architecture.svg)
 
 All writes use **read-back verification** — after writing, the integration reads the register back to confirm the value stuck. If a ShineWiFi dongle overwrites the value on the next poll cycle, a persistent notification is shown in the HA UI.
 

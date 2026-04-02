@@ -2204,7 +2204,7 @@ class GrowattModbus:
                     fw_version = holding_regs[3]
                     data.firmware_version = f"{fw_version >> 8}.{fw_version & 0xFF}"
 
-                # Serial number from registers 9-13
+                # Serial number from registers 9-13 (legacy range, used by TL-X and base models)
                 if len(holding_regs) > 13:
                     serial_parts = []
                     for i in range(9, 14):
@@ -2221,6 +2221,28 @@ class GrowattModbus:
                     data.serial_number = ''.join(serial_parts).rstrip('\x00')
             except Exception as e:
                 logger.warning(f"Error reading device info: {e}")
+
+        # VPP-range models (TL-XH, MOD, WIT) store serial in holding registers 3001-3005.
+        # Try that range and override the legacy serial if it returns a valid result.
+        _VPP_SERIAL_MAPS = ('TL_XH', 'MOD_', 'WIT_')
+        if any(m in self.register_map_name for m in _VPP_SERIAL_MAPS):
+            try:
+                vpp_serial_regs = self.read_holding_registers(3001, 5)  # 5 regs = 10 ASCII chars
+                if vpp_serial_regs is not None and len(vpp_serial_regs) >= 5:
+                    vpp_parts = []
+                    for reg_val in vpp_serial_regs:
+                        for byte_val in ((reg_val >> 8) & 0xFF, reg_val & 0xFF):
+                            if 32 <= byte_val <= 126:
+                                vpp_parts.append(chr(byte_val))
+                    vpp_serial = ''.join(vpp_parts).strip()
+                    # Validate: reasonable length and starts with two letters (Growatt serial format)
+                    if len(vpp_serial) >= 4 and vpp_serial[:2].isalpha():
+                        data.serial_number = vpp_serial
+                        logger.debug("[DEVICE INFO] VPP serial (3001-3005): %s", vpp_serial)
+                    else:
+                        logger.debug("[DEVICE INFO] VPP serial read returned unexpected data, keeping legacy: %r", vpp_serial)
+            except Exception as e:
+                logger.debug("[DEVICE INFO] VPP serial read failed, keeping legacy: %s", e)
 
         # --- Export control (122–123) --- ALWAYS ATTEMPTED
         if 122 in holding_map or 123 in holding_map:

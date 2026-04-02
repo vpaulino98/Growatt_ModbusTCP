@@ -6,34 +6,7 @@
 
 When you add the integration, it attempts to identify your inverter automatically before asking you to choose a profile.
 
-```mermaid
-flowchart TD
-    START([Integration setup starts]) --> DTC
-
-    DTC["Read DTC register 30000\n(VPP Identification)"]
-    DTC -->|"Valid DTC code returned\ne.g. 5100, 5400, 5603"| DTCMAP
-    DTC -->|"Illegal Function /\nNo response"| LEGACY
-
-    DTCMAP["Look up DTC in profile map\ne.g. 5100 → MIN TL-XH"]
-    DTCMAP -->|"DTC found"| REFINE
-    DTCMAP -->|"Unknown DTC"| MODEL
-
-    REFINE["Refinement checks\ne.g. PV3 voltage present?\nStorage range responds?"]
-    REFINE --> CONFIRM
-
-    LEGACY["Try model name string\n(registers 125–132)"]
-    LEGACY -->|"Name matched\ne.g. 'MIN', 'MIC', 'SPH'"| MODEL
-    LEGACY -->|"No match"| MANUAL
-
-    MODEL["Select profile by\nmodel name pattern"]
-    MODEL --> CONFIRM
-
-    CONFIRM(["✅ Profile selected\nShow confirmation to user"])
-    MANUAL(["⚠️ Manual selection required\nUser picks from dropdown"])
-
-    style CONFIRM fill:#e8f5e9
-    style MANUAL fill:#fff3e0
-```
+![Auto-Detection Flow](images/auto-detection-flow.svg)
 
 **Key points:**
 
@@ -50,20 +23,19 @@ flowchart TD
 
 | Model | Range | PV Strings | VPP Support | Auto-detect | Tested | Notes |
 |-------|-------|-----------|-------------|-------------|--------|-------|
-| **MIC 600-3300TL-X** | 0.6–3.3 kW | 1 | Legacy only | Model name | ⚠️ | Micro inverter |
-| **MIN 3000-6000TL-X** | 3–6 kW | 2 | VPP + Legacy | Model name | ⚠️ | |
+| **MIC 600-3300TL-X** | 0.6–3.3 kW | 1 | Legacy only | Model name | ✅ | Micro inverter |
+| **MIN 3000-6000TL-X** | 3–6 kW | 2 | VPP + Legacy | Model name | ✅ | |
 | **MIN 7000-10000TL-X** | 7–10 kW | 3 | VPP + Legacy | Model name | ✅ | |
 
 ### Single-Phase Hybrid (with Battery)
 
 | Model | Range | PV Strings | VPP Support | Auto-detect | Tested | Notes |
 |-------|-------|-----------|-------------|-------------|--------|-------|
-| **SPH 3000-6000** | 3–6 kW | 2 | VPP + Legacy | Model name | ⚠️ | |
-| **SPH 7000-10000** | 7–10 kW | 2 | VPP + Legacy | Model name | ⚠️ | |
-| **SPH/SPM 8000-10000 HU** | 8–10 kW | 3 | VPP + Legacy | DTC | ⚠️ | BMS monitoring (SOH, cell voltages) |
-| **SPE 8000-12000 ES** | 8–12 kW | 2 | VPP-like | Model name | ⚠️ | Peak shaving, parallel operation |
-| **TL-XH 3000-10000** | 3–10 kW | 3 | VPP + Legacy | DTC | ⚠️ | |
 | **MIN TL-XH 3000-10000** | 3–10 kW | 2–3 | VPP | DTC 5100 | ✅ | 3–6kW: 2 strings; 7–10kW: 3 strings |
+| **SPE 8000-12000 ES** | 8–12 kW | 2 | VPP-like | Model name | ✅ | Peak shaving, parallel operation |
+| **SPH 3000-6000** | 3–6 kW | 2 | VPP + Legacy | Model name | ✅ | |
+| **SPH 7000-10000** | 7–10 kW | 2 | VPP + Legacy | Model name | ✅ | |
+| **SPH/SPM 8000-10000 HU** | 8–10 kW | 3 | VPP + Legacy | DTC | ⚠️ | BMS monitoring (SOH, cell voltages) |
 
 ### Single-Phase Off-Grid
 
@@ -78,7 +50,7 @@ flowchart TD
 | **MID 15000-25000TL3-X** | 15–25 kW | 2 | No | VPP + Legacy | Model name | ⚠️ | Grid-tied |
 | **MOD 6000-15000TL3-XH** | 6–15 kW | 3 | Yes | VPP + Legacy | DTC 5400 | ✅ | Battery monitoring only (control pending) |
 | **SPH-TL3 3000-10000** | 3–10 kW | 2 | Yes | VPP + Legacy | DTC | ✅ | Tested: SPH 8000TL3 BH-UP |
-| **WIT 4000-15000TL3** | 4–15 kW | 2 | Yes | VPP v2.02 | DTC 5603 | ⚠️ | Advanced VPP control |
+| **WIT 4000-15000TL3** | 4–15 kW | 2 | Yes | VPP v2.02 | DTC 5603 | ✅ | Advanced VPP control |
 
 **Legend:** ✅ Tested with real hardware · ⚠️ Profile from documentation, community validation welcome
 
@@ -92,40 +64,40 @@ flowchart TD
 
 ## Sensor Availability by Model
 
-| Sensor | MIC | MIN 3-6k | MIN 7-10k | MIN TL-XH | TL-XH | SPH 3-6k | SPH 7-10k | SPF | SPH-TL3 | MID | MOD | WIT |
-|--------|:---:|:--------:|:---------:|:---------:|:-----:|:--------:|:---------:|:---:|:-------:|:---:|:---:|:---:|
-| **Solar Input** | | | | | | | | | | | | |
-| PV1 Voltage/Current/Power | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| PV2 Voltage/Current/Power | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| PV3 Voltage/Current/Power | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
-| Solar Total Power | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **AC Output (Single-Phase)** | | | | | | | | | | | | |
-| AC Voltage / Current / Power | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| AC Apparent Power | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| AC Frequency | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **AC Output (Three-Phase)** | | | | | | | | | | | | |
-| Phase R/S/T Voltage / Current / Power | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
-| AC Total Power | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
-| **Power Flow** | | | | | | | | | | | | |
-| Grid Export / Import Power | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| House Consumption (calculated) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Self Consumption | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Power to Grid / Load / User (registers) | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
-| **Battery (Hybrid/Off-Grid)** | | | | | | | | | | | | |
-| Battery Voltage / Current / Power | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
-| Battery SOC | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
-| Battery Temperature | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
-| BMS SOH / Cell Voltages | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅* | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **Energy Totals** | | | | | | | | | | | | |
-| Energy Today / Total (PV) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Energy to Grid Today / Total | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Load Energy Today / Total | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Charge / Discharge Energy Today / Total | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
-| AC Charge Energy Today / Total | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
-| **System & Diagnostics** | | | | | | | | | | | | |
-| Inverter / IPM Temperature | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Boost Temperature | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Status / Derating / Fault Codes | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Sensor | MIC | MIN 3-6k | MIN 7-10k | MIN TL-XH | SPH 3-6k | SPH 7-10k | SPF | SPH-TL3 | MID | MOD | WIT |
+|--------|:---:|:--------:|:---------:|:---------:|:--------:|:---------:|:---:|:-------:|:---:|:---:|:---:|
+| **Solar Input** | | | | | | | | | | | |
+| PV1 Voltage/Current/Power | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| PV2 Voltage/Current/Power | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| PV3 Voltage/Current/Power | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| Solar Total Power | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **AC Output (Single-Phase)** | | | | | | | | | | | |
+| AC Voltage / Current / Power | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| AC Apparent Power | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| AC Frequency | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **AC Output (Three-Phase)** | | | | | | | | | | | |
+| Phase R/S/T Voltage / Current / Power | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
+| AC Total Power | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
+| **Power Flow** | | | | | | | | | | | |
+| Grid Export / Import Power | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| House Consumption (calculated) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Self Consumption | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Power to Grid / Load / User (registers) | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
+| **Battery (Hybrid/Off-Grid)** | | | | | | | | | | | |
+| Battery Voltage / Current / Power | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
+| Battery SOC | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
+| Battery Temperature | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
+| BMS SOH / Cell Voltages | ❌ | ❌ | ❌ | ❌ | ❌ | ✅* | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Energy Totals** | | | | | | | | | | | |
+| Energy Today / Total (PV) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Energy to Grid Today / Total | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Load Energy Today / Total | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Charge / Discharge Energy Today / Total | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
+| AC Charge Energy Today / Total | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
+| **System & Diagnostics** | | | | | | | | | | | |
+| Inverter / IPM Temperature | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Boost Temperature | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Status / Derating / Fault Codes | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 *HU variants only (SPH/SPM 8000-10000TL3-BH-HU)
 
@@ -188,13 +160,12 @@ If auto-detection fails (or you want to override), choose based on:
 
 | Select this | PV Strings | Power | When |
 |-------------|-----------|-------|------|
+| MIN TL-XH 3000-10000 | 2–3 | 3–10 kW | Battery hybrid (3–6kW: 2 strings, 7–10kW: 3 strings) |
+| SPE 8000-12000 ES | 2 | 8–12 kW | Battery hybrid, peak shaving |
+| SPF 3000-6000 ES PLUS | 2 | 3–6 kW | Off-grid with battery |
 | SPH 3000-6000 | 2 | 3–6 kW | Battery hybrid |
 | SPH 7000-10000 | 2 | 7–10 kW | Battery hybrid |
 | SPH/SPM 8000-10000 HU | 3 | 8–10 kW | Battery hybrid with BMS monitoring |
-| SPE 8000-12000 ES | 2 | 8–12 kW | Battery hybrid, peak shaving |
-| TL-XH 3000-10000 | 3 | 3–10 kW | Battery hybrid, 3 strings |
-| MIN TL-XH 3000-10000 | 2–3 | 3–10 kW | Battery hybrid (3–6kW: 2 strings, 7–10kW: 3 strings) |
-| SPF 3000-6000 ES PLUS | 2 | 3–6 kW | Off-grid with battery |
 
 ### Three-Phase Models
 

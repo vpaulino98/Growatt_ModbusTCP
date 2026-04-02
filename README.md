@@ -13,19 +13,7 @@ A native Home Assistant integration for Growatt solar inverters using **direct M
 
 ## How It Works
 
-```mermaid
-graph LR
-    INV["🔆 Growatt Inverter\n(RS485 port)"]
-    ADP["📡 RS485 Adapter\n(TCP/WiFi or USB)"]
-    HA["🏠 Home Assistant"]
-    INT["⚙️ Growatt Modbus\nIntegration"]
-    DEV["📊 HA Devices\n& Entities"]
-
-    INV -->|"RS485 A/B"| ADP
-    ADP -->|"TCP port 502\nor USB serial"| HA
-    HA --> INT
-    INT -->|"Modbus polling\nevery 30s"| DEV
-```
+![System Topology](docs/images/system-topology.svg)
 
 The integration polls your inverter directly over Modbus — the same protocol the inverter uses natively. There is no cloud account required and no data leaves your home network. The adapter converts RS485 signals to a TCP or USB connection that Home Assistant can reach.
 
@@ -35,19 +23,7 @@ The integration polls your inverter directly over Modbus — the same protocol t
 
 When you add the integration, it creates **up to five devices** in Home Assistant, each grouping logically related sensors:
 
-```mermaid
-graph TD
-    INV["🖥️ Inverter Device\n─────────────────\nStatus, temperatures, faults\nFirmware & serial number\nControl entities"]
-    SOL["☀️ Solar Device\n─────────────────\nPV string voltage/current/power\nAC output power & frequency\nEnergy today & total"]
-    GRD["🔌 Grid Device\n─────────────────\nGrid import & export power\nGrid voltage & frequency\nEnergy to/from grid"]
-    LOD["🏠 Load Device\n─────────────────\nHouse consumption\nLoad power\nLoad energy today & total"]
-    BAT["🔋 Battery Device\n─────────────────\nState of charge (SOC)\nVoltage, current, power\nCharge & discharge energy\n(Hybrid models only)"]
-
-    INV --> SOL
-    INV --> GRD
-    INV --> LOD
-    INV --> BAT
-```
+![Device Hierarchy](docs/images/device-hierarchy.svg)
 
 | Device | Always present? | Key entities |
 |--------|----------------|--------------|
@@ -67,26 +43,7 @@ Understanding which sensor measures what is the most common source of confusion.
 
 ### Power Flow Diagram
 
-```mermaid
-graph LR
-    PV1["☀️ PV Strings\npv1_power\npv2_power\npv3_power"]
-    INV["⚡ Inverter"]
-    BAT["🔋 Battery\nbattery_power\n+charging / −discharging"]
-    GRID["🔌 Grid"]
-    LOAD["🏠 House"]
-
-    PV1 -->|"solar_total_power"| INV
-    INV <-->|"battery_power"| BAT
-    INV -->|"power_to_load\npower_to_user"| LOAD
-    INV <-->|"power_to_grid\n+export / −import"| GRID
-    GRID -->|"grid_import_power"| LOAD
-    INV -->|"grid_export_power"| GRID
-
-    style BAT fill:#ffe0b2
-    style GRID fill:#e3f2fd
-    style PV1 fill:#fff9c4
-    style LOAD fill:#e8f5e9
-```
+![Power Flow](docs/images/power-flow.svg)
 
 ### Sensor Glossary
 
@@ -125,20 +82,19 @@ graph LR
 
 | Family | Type | Phase | Battery | Auto-detect | Tested |
 |--------|------|-------|---------|-------------|--------|
-| **MIC** 0.6–3.3kW | Grid-tied | Single | — | Manual | ⚠️ |
-| **MIN** 3–6kW TL-X | Grid-tied | Single | — | VPP + Legacy | ⚠️ |
-| **MIN** 7–10kW TL-X | Grid-tied | Single | — | VPP + Legacy | ✅ |
-| **MIN** TL-XH 3–10kW | Hybrid | Single | Yes | VPP | ✅ |
-| **TL-XH** 3–10kW | Hybrid | Single | Yes | VPP + Legacy | ⚠️ |
-| **SPH** 3–6kW | Hybrid | Single | Yes | VPP + Legacy | ⚠️ |
-| **SPH** 7–10kW | Hybrid | Single | Yes | VPP + Legacy | ⚠️ |
-| **SPH/SPM** 8–10kW HU | Hybrid | Single | Yes | VPP + Legacy | ⚠️ |
-| **SPE** 8–12kW ES | Hybrid | Single | Yes | Model name | ⚠️ |
-| **SPF** 3–6kW ES PLUS | Off-grid | Single | Yes | Manual | ✅ |
+| **MIC** 0.6–3.3kW | Grid-tied | Single | — | Manual | ✅ |
 | **MID** 15–25kW | Grid-tied | Three | — | VPP + Legacy | ⚠️ |
+| **MIN** 3–6kW TL-X | Grid-tied | Single | — | VPP + Legacy | ✅ |
+| **MIN** 7–10kW TL-X | Grid-tied | Single | — | VPP + Legacy | ✅ |
+| **MIN TL-XH** 3–10kW | Hybrid | Single | Yes | VPP | ✅ |
 | **MOD** 6–15kW TL3-XH | Hybrid | Three | Yes | VPP + Legacy | ✅ |
+| **SPE** 8–12kW ES | Hybrid | Single | Yes | Model name | ✅ |
+| **SPF** 3–6kW ES PLUS | Off-grid | Single | Yes | Manual | ✅ |
+| **SPH** 3–6kW | Hybrid | Single | Yes | VPP + Legacy | ✅ |
+| **SPH** 7–10kW | Hybrid | Single | Yes | VPP + Legacy | ✅ |
+| **SPH/SPM** 8–10kW HU | Hybrid | Single | Yes | VPP + Legacy | ⚠️ |
 | **SPH-TL3** 3–10kW | Hybrid | Three | Yes | VPP + Legacy | ✅ |
-| **WIT** 4–15kW TL3 | Hybrid | Three | Yes | VPP v2.02 | ⚠️ |
+| **WIT** 4–15kW TL3 | Hybrid | Three | Yes | VPP v2.02 | ✅ |
 
 ✅ Tested with real hardware · ⚠️ Profile from documentation, community validation welcome
 
@@ -160,16 +116,7 @@ graph LR
 | **Waveshare RS485-to-ETH** | TCP | 9600 8N1, port 502, RFC2217: On |
 | **Any RS485-to-USB** | Serial | `/dev/ttyUSB0` or `COM3`, 9600 baud |
 
-```mermaid
-graph LR
-    A["🔆 Inverter\nCOM port"] -->|"Pin A (RS485+)"| B["📡 Adapter\n(TCP or USB)"]
-    A -->|"Pin B (RS485−)"| B
-    B -->|"TCP port 502\nor USB"| C["🏠 Home Assistant"]
-
-    style A fill:#fff9c4
-    style B fill:#e3f2fd
-    style C fill:#e8f5e9
-```
+![System Topology](docs/images/system-topology.svg)
 
 **Inverter connector pinout:**
 
@@ -263,41 +210,7 @@ Sensors automatically resume normal operation when the inverter wakes at sunrise
 
 Use the **[Universal Register Scanner](#universal-register-scanner)** as your first step for any unexplained sensor issue — it confirms what the hardware is actually reporting before you dig into integration settings.
 
-```mermaid
-flowchart TD
-    START([🔍 Something is wrong]) --> Q1{What's the problem?}
-
-    Q1 -->|Sensor shows\nwrong value| Q2{Was it working\nbefore?}
-    Q1 -->|Sensor shows\n'unavailable'| Q3{Is the inverter\nonline right now?}
-    Q1 -->|Battery sensors\nall show 0| Q4{Is a hybrid\nprofile selected?}
-    Q1 -->|Grid values\nare backwards| FIX_GRID[Run detect_grid_orientation\nservice — or toggle\nInvert Grid Power in options]
-    Q1 -->|Wrong model\ndetected| FIX_MODEL[Delete integration,\nre-add with manual\nmodel selection]
-    Q1 -->|Modbus warning\nspam in logs| FIX_WARN[Enable debug logging\nand run the Universal\nRegister Scanner]
-
-    Q2 -->|Yes| Q5{Does the value\nrevert after\nyou change it?}
-    Q2 -->|No, never worked| FIX_SCAN[Run Universal Scanner\nto confirm correct\nprofile and register\nresponse]
-
-    Q5 -->|Yes, reverts| FIX_CLOUD[ShineWiFi dongle is\noverwriting your settings.\nDisconnect dongle or\ndisable cloud control]
-    Q5 -->|No, just wrong| FIX_SCAN
-
-    Q3 -->|No - it's night| OK_NIGHT[✅ Expected behaviour.\nSensors retain last\nvalues. Will resume\nat sunrise]
-    Q3 -->|Yes, it's daytime| Q6{Connection\nworking?}
-
-    Q6 -->|No| FIX_CONN[Check wiring A/B,\nverify IP/port 502,\nconfirm slave ID = 1,\ntest: telnet host 502]
-    Q6 -->|Yes| FIX_SCAN
-
-    Q4 -->|No| FIX_PROFILE[Switch to a hybrid\nprofile matching your\ninverter model]
-    Q4 -->|Yes| FIX_SCAN
-
-    style OK_NIGHT fill:#e8f5e9
-    style FIX_CLOUD fill:#fff3e0
-    style FIX_GRID fill:#e3f2fd
-    style FIX_CONN fill:#fce4ec
-    style FIX_SCAN fill:#f3e5f5
-    style FIX_MODEL fill:#f3e5f5
-    style FIX_PROFILE fill:#f3e5f5
-    style FIX_WARN fill:#f3e5f5
-```
+![Troubleshooting Flowchart](docs/images/troubleshooting-flowchart.svg)
 
 ### Enable Debug Logging
 
