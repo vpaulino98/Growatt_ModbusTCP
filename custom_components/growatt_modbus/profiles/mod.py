@@ -65,10 +65,20 @@ MOD_6000_15000TL3_XH = {
         # Energy Today (32-bit) - VALIDATED: 8.1kWh
         53: {'name': 'energy_today_high', 'scale': 1, 'unit': '', 'pair': 54},
         54: {'name': 'energy_today_low', 'scale': 1, 'unit': '', 'pair': 53, 'combined_scale': 0.1, 'combined_unit': 'kWh'},
-        
+
         # Energy Total (32-bit)
         55: {'name': 'energy_total_high', 'scale': 1, 'unit': '', 'pair': 56},
         56: {'name': 'energy_total_low', 'scale': 1, 'unit': '', 'pair': 55, 'combined_scale': 0.1, 'combined_unit': 'kWh'},
+
+        # PV String Energy (per MPPT, daily and lifetime) — confirmed in scan #228
+        59: {'name': 'pv1_energy_today_high', 'scale': 1, 'unit': '', 'pair': 60, 'desc': 'PV1 energy today HIGH'},
+        60: {'name': 'pv1_energy_today_low', 'scale': 1, 'unit': '', 'pair': 59, 'combined_scale': 0.1, 'combined_unit': 'kWh'},
+        63: {'name': 'pv2_energy_today_high', 'scale': 1, 'unit': '', 'pair': 64, 'desc': 'PV2 energy today HIGH'},
+        64: {'name': 'pv2_energy_today_low', 'scale': 1, 'unit': '', 'pair': 63, 'combined_scale': 0.1, 'combined_unit': 'kWh'},
+
+        # PV Total energy lifetime
+        91: {'name': 'pv_energy_total_high', 'scale': 1, 'unit': '', 'pair': 92, 'desc': 'PV energy total lifetime HIGH'},
+        92: {'name': 'pv_energy_total_low', 'scale': 1, 'unit': '', 'pair': 91, 'combined_scale': 0.1, 'combined_unit': 'kWh'},
 
         # Temperatures
         93: {'name': 'inverter_temp', 'scale': 0.1, 'unit': '°C', 'signed': True},
@@ -151,8 +161,8 @@ MOD_6000_15000TL3_XH = {
         # Battery Power (VPP range - NOT responding on MOD 10000TL3-XH, kept for other MOD variants)
         # Renamed with _vpp suffix to avoid conflict with 3000+ range (primary source)
         # Signed: positive=charging, negative=discharging
-        31200: {'name': 'battery_power_vpp_high', 'scale': 1, 'unit': '', 'pair': 31201, 'desc': 'Battery power HIGH (VPP range, may not respond on XH variants)'},
-        31201: {'name': 'battery_power_vpp_low', 'scale': 1, 'unit': '', 'pair': 31200, 'combined_scale': 0.1, 'combined_unit': 'W', 'signed': True, 'desc': 'Battery power (VPP range, may not respond on XH variants)'},
+        31200: {'name': 'battery_power_high', 'scale': 1, 'unit': '', 'pair': 31201, 'desc': 'Battery power HIGH (VPP range — confirmed responding on MOD XH)'},
+        31201: {'name': 'battery_power_low', 'scale': 1, 'unit': '', 'pair': 31200, 'combined_scale': 0.1, 'combined_unit': 'W', 'signed': True, 'desc': 'Battery power signed (VPP range — confirmed responding on MOD XH, positive=charging)'},
 
         # Battery Energy (VPP range - NOT responding on MOD 10000TL3-XH, kept for other MOD variants)
         # Renamed with _vpp suffix to avoid conflict with 3000+ range (primary source)
@@ -234,6 +244,16 @@ MOD_6000_15000TL3_XH = {
         0: {'name': 'on_off', 'scale': 1, 'unit': '', 'access': 'RW', 'desc': '0=Off, 1=On'},
         3: {'name': 'active_power_rate', 'scale': 1, 'unit': '%', 'access': 'RW', 'desc': 'Max output power %'},
         30: {'name': 'modbus_address', 'scale': 1, 'unit': '', 'access': 'RW', 'desc': 'Modbus address 1-254'},
+
+        # Battery SOC charge/discharge limits — scan #228 confirms hardware responds (all Read OK)
+        1071: {'name': 'discharge_stopped_soc', 'scale': 1, 'unit': '%', 'access': 'RW',
+               'valid_range': (0, 100), 'desc': 'SOC level to stop battery discharge'},
+        1090: {'name': 'charge_power_rate', 'scale': 1, 'unit': '%', 'access': 'RW',
+               'valid_range': (0, 100), 'desc': 'Battery charge power rate limit (0-100%)'},
+        1091: {'name': 'charge_stopped_soc', 'scale': 1, 'unit': '%', 'access': 'RW',
+               'valid_range': (0, 100), 'desc': 'SOC level to stop battery charge'},
+        1092: {'name': 'ac_charge_enable', 'scale': 1, 'unit': '', 'access': 'RW',
+               'valid_range': (0, 1), 'desc': 'Enable charging from AC (grid)'},
 
         # Device identification
         30000: {'name': 'dtc_code', 'scale': 1, 'unit': '', 'access': 'RO', 'desc': 'Device Type Code: 5400 for MOD-XH/MID-XH', 'default': 5400},

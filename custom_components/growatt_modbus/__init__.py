@@ -38,6 +38,84 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     return True
 
 
+def _migrate_entity_ids(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Rename entity IDs in the registry to match the has_entity_name=True convention.
+
+    With has_entity_name=True, HA composes entity IDs as:
+      {domain}.{device_name_slug}_{entity_short_name_slug}
+
+    Previous naming included the integration name in _attr_name, producing double-prefix
+    IDs once sub-devices (via_device) were introduced in v0.6.6.
+
+    unique_id is the stable anchor used to find each entity regardless of its current ID.
+    """
+    from homeassistant.util import slugify as ha_slugify
+    from .sensor import SENSOR_DEFINITIONS
+    from .const import (
+        get_device_type_for_sensor,
+        get_device_type_for_control,
+        DEVICE_TYPE_SOLAR,
+        DEVICE_TYPE_GRID,
+        DEVICE_TYPE_LOAD,
+        DEVICE_TYPE_BATTERY,
+    )
+
+    _DEVICE_SUFFIX = {
+        DEVICE_TYPE_SOLAR: "Solar",
+        DEVICE_TYPE_GRID: "Grid",
+        DEVICE_TYPE_LOAD: "Load",
+        DEVICE_TYPE_BATTERY: "Battery",
+    }
+
+    ent_name = entry.data['name']
+    entity_registry = er.async_get(hass)
+
+    def _new_eid(domain: str, device_type: str, short_name: str) -> str:
+        suffix = _DEVICE_SUFFIX.get(device_type)
+        dev_name = f"{ent_name} {suffix}" if suffix else ent_name
+        return f"{domain}.{ha_slugify(dev_name)}_{ha_slugify(short_name)}"
+
+    def _try_rename(current_eid: str, expected_eid: str) -> None:
+        if current_eid == expected_eid:
+            return
+        try:
+            entity_registry.async_update_entity(current_eid, new_entity_id=expected_eid)
+            _LOGGER.info("v0.6.7 entity ID migration: %s → %s", current_eid, expected_eid)
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.debug("v0.6.7 entity ID migration skipped %s → %s: %s", current_eid, expected_eid, exc)
+
+    # Sensors
+    for sensor_key, sensor_def in SENSOR_DEFINITIONS.items():
+        uid = f"{entry.entry_id}_{sensor_key}"
+        current = entity_registry.async_get_entity_id("sensor", DOMAIN, uid)
+        if current:
+            _try_rename(current, _new_eid("sensor", get_device_type_for_sensor(sensor_key), sensor_def['name']))
+
+    # Binary sensor (inverter online)
+    bin_uid = f"{entry.entry_id}_inverter_online"
+    bin_current = entity_registry.async_get_entity_id("binary_sensor", DOMAIN, bin_uid)
+    if bin_current:
+        _try_rename(bin_current, f"binary_sensor.{ha_slugify(ent_name)}_inverter_online")
+
+    # Select / Number / Time controls
+    _NUMBER_FRIENDLY_OVERRIDES = {
+        'active_power_rate': 'VPP Active Power Rate',
+        'export_limit_w': 'VPP Export Limit (W)',
+        'max_output_power_rate': 'Max Output Power Rate',
+        'vpp_export_limit_power_rate': 'VPP Export Limit Power Rate',
+    }
+    for control_name in WRITABLE_REGISTERS:
+        base_friendly = control_name.replace('_', ' ').title()
+        for domain in ("select", "number", "time"):
+            uid = f"{entry.entry_id}_{control_name}"
+            current = entity_registry.async_get_entity_id(domain, DOMAIN, uid)
+            if not current:
+                continue
+            friendly = _NUMBER_FRIENDLY_OVERRIDES.get(control_name, base_friendly) if domain == "number" else base_friendly
+            device_type = get_device_type_for_control(control_name)
+            _try_rename(current, _new_eid(domain, device_type, friendly))
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Growatt Modbus from a config entry."""
 
@@ -110,6 +188,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         model=_inv_info.get("model"),
         hw_version=_inv_info.get("hw_version"),
     )
+
+    # v0.6.7: Rename entity IDs to has_entity_name=True convention.
+    # HA 2025.x generates entity IDs as {device_slug}_{entity_slug} for entities on sub-devices.
+    # Before v0.6.6: _attr_name included the integration prefix → entity IDs were correct by accident.
+    # v0.6.6 introduced via_device (sub-devices); without has_entity_name=True the device slug was
+    # prepended, producing double-prefix IDs like growatt_modbus_grid_growatt_modbus_energy_to_grid.
+    # This migration renames existing registry entries to the new short-name IDs.
+    _migrate_entity_ids(hass, entry)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 

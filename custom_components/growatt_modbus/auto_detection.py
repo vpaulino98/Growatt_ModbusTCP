@@ -447,6 +447,7 @@ def detect_profile_from_dtc(dtc_code: int) -> Optional[str]:
 
         # MOD/MID series - Official Growatt DTC
         5400: 'mod_6000_15000tl3_xh_v201', # MOD-XH\MID-XH - covers both MOD and MID
+        5401: 'mod_6000_15000tl3_xh_v201', # MOD 12-KTL3-HU (same family, confirmed scan #228)
 
         # WIT/WIS series - Official Growatt DTCs
         # Register 988 can distinguish: 0=WIT, 1=WIS
