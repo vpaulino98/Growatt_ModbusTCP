@@ -6,6 +6,8 @@
 
 ## v0.6.8b1
 
+Issues: #228 · #226
+
 > **Beta release** — MOD GEN4 TOU reversion fix + extended schedule support for MOD and SPH.
 > Field-test recommended before deploying to production. See verification steps below.
 
