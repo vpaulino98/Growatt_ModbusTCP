@@ -131,6 +131,13 @@ WIT_4000_15000TL3 = {
         187: {'name': 'vpp_function_status', 'scale': 1, 'unit': '', 'desc': '0=Disabled, 1=Enabled'},
         188: {'name': 'datalog_server_status', 'scale': 1, 'unit': '', 'desc': '0=Connected, 1=Failed'},
 
+        # 3000-range battery fallbacks (TL-XH/TL-X protocol, also responds on some WIT firmware)
+        # Used as last-resort source when VPP register 31215 reports 0 and 8035 is unavailable.
+        # Note: 3169 uses 0.01 V scale (differs from 8034's 0.1 V scale).
+        3169: {'name': 'battery_voltage_3k', 'scale': 0.01, 'unit': 'V', 'desc': 'Vbat fallback (3k range, 0.01V scale)'},
+        3170: {'name': 'battery_current_3k', 'scale': 0.1,  'unit': 'A', 'signed': True, 'desc': 'Ibat fallback (3k range)'},
+        3171: {'name': 'battery_soc_3k',     'scale': 1,    'unit': '%', 'desc': 'SOC fallback (3k range)'},
+
         # Battery Range (8000-8124)
         8034: {'name': 'battery_voltage', 'scale': 0.1, 'unit': 'V'},
         8035: {'name': 'battery_current', 'scale': 0.1, 'unit': 'A', 'signed': True},

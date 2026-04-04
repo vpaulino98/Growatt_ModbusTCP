@@ -271,6 +271,19 @@ class GrowattData:
     mod_tou_3_end:   int = 0
     mod_tou_4_start: int = 0
     mod_tou_4_end:   int = 0
+    # MOD GEN4 TOU slots 5-9 (registers 3050-3059; gap at 3046-3049 is EMS/grid-charge controls)
+    mod_tou_5_start: int = 0
+    mod_tou_5_end:   int = 0
+    mod_tou_6_start: int = 0
+    mod_tou_6_end:   int = 0
+    mod_tou_7_start: int = 0
+    mod_tou_7_end:   int = 0
+    mod_tou_8_start: int = 0
+    mod_tou_8_end:   int = 0
+    mod_tou_9_start: int = 0
+    mod_tou_9_end:   int = 0
+    # MOD GEN4 prerequisite gate for TOU persistence (register 3049)
+    allow_grid_charge: int = 0
 
     time_period_1_enable: int = 0     # 0=Disabled, 1=Enabled
     time_period_1_start: int = 0      # hex-packed (hours*256+minutes, e.g. 06:00 = 0x0600 = 1536)
@@ -281,6 +294,36 @@ class GrowattData:
     time_period_3_enable: int = 0     # 0=Disabled, 1=Enabled
     time_period_3_start: int = 0      # hex-packed
     time_period_3_end: int = 0        # hex-packed
+    # SPH GEN3 Battery First extended slots 4-6 (registers 1017-1025)
+    batt_first_time_period_4_start: int = 0
+    batt_first_time_period_4_end:   int = 0
+    batt_first_time_period_4_enable: int = 0
+    batt_first_time_period_5_start: int = 0
+    batt_first_time_period_5_end:   int = 0
+    batt_first_time_period_5_enable: int = 0
+    batt_first_time_period_6_start: int = 0
+    batt_first_time_period_6_end:   int = 0
+    batt_first_time_period_6_enable: int = 0
+    # SPH GEN3 Grid First extended slots 4-6 (registers 1026-1034)
+    grid_first_time_period_4_start: int = 0
+    grid_first_time_period_4_end:   int = 0
+    grid_first_time_period_4_enable: int = 0
+    grid_first_time_period_5_start: int = 0
+    grid_first_time_period_5_end:   int = 0
+    grid_first_time_period_5_enable: int = 0
+    grid_first_time_period_6_start: int = 0
+    grid_first_time_period_6_end:   int = 0
+    grid_first_time_period_6_enable: int = 0
+    # SPH GEN3 Grid First extended slots 7-9 (registers 1080-1088)
+    grid_first_time_period_7_start: int = 0
+    grid_first_time_period_7_end:   int = 0
+    grid_first_time_period_7_enable: int = 0
+    grid_first_time_period_8_start: int = 0
+    grid_first_time_period_8_end:   int = 0
+    grid_first_time_period_8_enable: int = 0
+    grid_first_time_period_9_start: int = 0
+    grid_first_time_period_9_end:   int = 0
+    grid_first_time_period_9_enable: int = 0
 
     # SPF Off-Grid Control registers
     output_config: int = 0            # 0=SBU, 1=SOL, 2=UTI, 3=SUB
@@ -1232,13 +1275,25 @@ class GrowattModbus:
 
             # Power Flow (if available - storage/hybrid models)
             power_to_user_addr = self._find_register_by_name('power_to_user_low')
-            power_to_grid_addr = self._find_register_by_name('power_to_grid_low')
             power_to_load_addr = self._find_register_by_name('power_to_load_low')
-            
+
+            # power_to_grid: prefer native 3044, fall back to VPP meter_power (31113 maps_to power_to_grid_low)
+            # On some MOD firmware the 3000-range registers return 0 while the VPP meter registers are correct.
+            power_to_grid_addr = self._find_register_by_name('power_to_grid_low')
+            if power_to_grid_addr:
+                ptg_val = self._get_register_value(power_to_grid_addr)
+                if ptg_val is None or ptg_val == 0.0:
+                    # Try VPP fallback (31113 maps_to='power_to_grid_low' in MOD profile)
+                    vpp_addr = self._find_register_by_name_with_fallback('power_to_grid_low')
+                    if vpp_addr and vpp_addr != power_to_grid_addr:
+                        vpp_val = self._get_register_value(vpp_addr)
+                        if vpp_val is not None and vpp_val != 0.0:
+                            ptg_val = vpp_val
+                            logger.debug(f"power_to_grid 3044=0, using VPP meter reg {vpp_addr}: {ptg_val}W")
+                data.power_to_grid = ptg_val if ptg_val is not None else 0.0
+
             if power_to_user_addr:
                 data.power_to_user = self._get_register_value(power_to_user_addr) or 0.0
-            if power_to_grid_addr:
-                data.power_to_grid = self._get_register_value(power_to_grid_addr) or 0.0
             if power_to_load_addr:
                 data.power_to_load = self._get_register_value(power_to_load_addr) or 0.0
             
@@ -1938,17 +1993,34 @@ class GrowattModbus:
                 data.battery_voltage = 0.0
 
             # Battery current (signed: positive=discharge, negative=charge)
-            # Use range-aware lookup to respect VPP vs fallback detection
+            # Cascade: VPP (31215) → native 8035 → 3k-range 3170
+            # Some WIT firmware variants return 0 on VPP register 31215 while 8035/3170 are correct.
             addr = self._find_register_by_name_with_fallback('battery_current_low')
             if not addr:
-                # Fallback to single-register name (used by legacy/WIT maps)
                 addr = self._find_register_by_name_with_fallback('battery_current')
             if not addr:
-                # Fallback to legacy register (3170)
                 addr = self._find_register_by_name('battery_current_legacy')
+
             if addr:
-                data.battery_current = self._get_register_value(addr) or 0.0
-                logger.debug(f"Battery current from reg {addr}: {data.battery_current}A")
+                value = self._get_register_value(addr)
+                # VPP returned 0 — try native 8000-range register before accepting zero
+                if (value is None or value == 0.0) and addr >= 31000:
+                    native_addr = self._find_register_by_name('battery_current')  # 8035 (name match only, not maps_to)
+                    if native_addr and native_addr != addr:
+                        native_val = self._get_register_value(native_addr)
+                        if native_val is not None and native_val != 0.0:
+                            value = native_val
+                            logger.debug(f"VPP battery_current=0, using native reg {native_addr}: {value}A")
+                # Still 0 — try 3k-range fallback (register 3170 on WIT if profile includes it)
+                if value is None or value == 0.0:
+                    fallback_addr = self._find_register_by_name('battery_current_3k')
+                    if fallback_addr:
+                        fallback_val = self._get_register_value(fallback_addr)
+                        if fallback_val is not None and fallback_val != 0.0:
+                            value = fallback_val
+                            logger.debug(f"Using 3k battery_current from reg {fallback_addr}: {value}A")
+                data.battery_current = value if value is not None else 0.0
+                logger.debug(f"Battery current: {data.battery_current}A (primary reg {addr})")
 
             # Battery SOC (use smart fallback if multiple ranges available)
             value = self._get_register_value_with_fallback('battery_soc')
@@ -2426,6 +2498,60 @@ class GrowattModbus:
             except Exception as e:
                 logger.debug(f"Could not read time period control registers: {e}")
 
+        # SPH GEN3 Battery First extended slots 4-6 (registers 1017-1025)
+        if any(reg in holding_map for reg in range(1017, 1026)):
+            try:
+                bf_regs = self.read_holding_registers(1017, 9)
+                if bf_regs is not None and len(bf_regs) >= 9:
+                    if 1017 in holding_map: data.batt_first_time_period_4_start  = int(bf_regs[0])
+                    if 1018 in holding_map: data.batt_first_time_period_4_end    = int(bf_regs[1])
+                    if 1019 in holding_map: data.batt_first_time_period_4_enable = int(bf_regs[2])
+                    if 1020 in holding_map: data.batt_first_time_period_5_start  = int(bf_regs[3])
+                    if 1021 in holding_map: data.batt_first_time_period_5_end    = int(bf_regs[4])
+                    if 1022 in holding_map: data.batt_first_time_period_5_enable = int(bf_regs[5])
+                    if 1023 in holding_map: data.batt_first_time_period_6_start  = int(bf_regs[6])
+                    if 1024 in holding_map: data.batt_first_time_period_6_end    = int(bf_regs[7])
+                    if 1025 in holding_map: data.batt_first_time_period_6_enable = int(bf_regs[8])
+                    logger.debug("[SPH CTRL] Battery First periods 4-6 loaded")
+            except Exception as e:
+                logger.debug(f"Could not read Battery First extended time period registers 1017-1025: {e}")
+
+        # SPH GEN3 Grid First extended slots 4-6 (registers 1026-1034)
+        if any(reg in holding_map for reg in range(1026, 1035)):
+            try:
+                gf46_regs = self.read_holding_registers(1026, 9)
+                if gf46_regs is not None and len(gf46_regs) >= 9:
+                    if 1026 in holding_map: data.grid_first_time_period_4_start  = int(gf46_regs[0])
+                    if 1027 in holding_map: data.grid_first_time_period_4_end    = int(gf46_regs[1])
+                    if 1028 in holding_map: data.grid_first_time_period_4_enable = int(gf46_regs[2])
+                    if 1029 in holding_map: data.grid_first_time_period_5_start  = int(gf46_regs[3])
+                    if 1030 in holding_map: data.grid_first_time_period_5_end    = int(gf46_regs[4])
+                    if 1031 in holding_map: data.grid_first_time_period_5_enable = int(gf46_regs[5])
+                    if 1032 in holding_map: data.grid_first_time_period_6_start  = int(gf46_regs[6])
+                    if 1033 in holding_map: data.grid_first_time_period_6_end    = int(gf46_regs[7])
+                    if 1034 in holding_map: data.grid_first_time_period_6_enable = int(gf46_regs[8])
+                    logger.debug("[SPH CTRL] Grid First periods 4-6 loaded")
+            except Exception as e:
+                logger.debug(f"Could not read Grid First extended time period registers 1026-1034: {e}")
+
+        # SPH GEN3 Grid First extended slots 7-9 (registers 1080-1088)
+        if any(reg in holding_map for reg in range(1080, 1089)):
+            try:
+                gf79_regs = self.read_holding_registers(1080, 9)
+                if gf79_regs is not None and len(gf79_regs) >= 9:
+                    if 1080 in holding_map: data.grid_first_time_period_7_start  = int(gf79_regs[0])
+                    if 1081 in holding_map: data.grid_first_time_period_7_end    = int(gf79_regs[1])
+                    if 1082 in holding_map: data.grid_first_time_period_7_enable = int(gf79_regs[2])
+                    if 1083 in holding_map: data.grid_first_time_period_8_start  = int(gf79_regs[3])
+                    if 1084 in holding_map: data.grid_first_time_period_8_end    = int(gf79_regs[4])
+                    if 1085 in holding_map: data.grid_first_time_period_8_enable = int(gf79_regs[5])
+                    if 1086 in holding_map: data.grid_first_time_period_9_start  = int(gf79_regs[6])
+                    if 1087 in holding_map: data.grid_first_time_period_9_end    = int(gf79_regs[7])
+                    if 1088 in holding_map: data.grid_first_time_period_9_enable = int(gf79_regs[8])
+                    logger.debug("[SPH CTRL] Grid First periods 7-9 loaded")
+            except Exception as e:
+                logger.debug(f"Could not read Grid First extended time period registers 1080-1088: {e}")
+
         # MOD TL3-XH TOU schedule (FC04 holding registers 3038-3045)
         if 3038 in holding_map:
             try:
@@ -2444,6 +2570,39 @@ class GrowattModbus:
                                  data.mod_tou_1_end, data.mod_tou_2_end, data.mod_tou_3_end, data.mod_tou_4_end)
             except Exception as e:
                 logger.debug(f"Could not read MOD TOU registers 3038-3045: {e}")
+
+        # MOD GEN4 Allow Grid Charge gate (register 3049)
+        if 3049 in holding_map:
+            try:
+                agc_regs = self.read_holding_registers(3049, 1)
+                if agc_regs is not None and len(agc_regs) >= 1:
+                    data.allow_grid_charge = int(agc_regs[0])
+                    logger.debug("[MOD TOU] allow_grid_charge=%s", data.allow_grid_charge)
+            except Exception as e:
+                logger.debug(f"Could not read allow_grid_charge register 3049: {e}")
+
+        # MOD TL3-XH TOU slots 5-9 (registers 3050-3059)
+        if 3050 in holding_map:
+            try:
+                tou59_regs = self.read_holding_registers(3050, 10)
+                if tou59_regs is not None and len(tou59_regs) >= 10:
+                    data.mod_tou_5_start = int(tou59_regs[0])
+                    data.mod_tou_5_end   = int(tou59_regs[1])
+                    data.mod_tou_6_start = int(tou59_regs[2])
+                    data.mod_tou_6_end   = int(tou59_regs[3])
+                    data.mod_tou_7_start = int(tou59_regs[4])
+                    data.mod_tou_7_end   = int(tou59_regs[5])
+                    data.mod_tou_8_start = int(tou59_regs[6])
+                    data.mod_tou_8_end   = int(tou59_regs[7])
+                    data.mod_tou_9_start = int(tou59_regs[8])
+                    data.mod_tou_9_end   = int(tou59_regs[9])
+                    logger.debug("[MOD TOU] periods 5-9 start: %s %s %s %s %s, end: %s %s %s %s %s",
+                                 data.mod_tou_5_start, data.mod_tou_6_start, data.mod_tou_7_start,
+                                 data.mod_tou_8_start, data.mod_tou_9_start,
+                                 data.mod_tou_5_end, data.mod_tou_6_end, data.mod_tou_7_end,
+                                 data.mod_tou_8_end, data.mod_tou_9_end)
+            except Exception as e:
+                logger.debug(f"Could not read MOD TOU registers 3050-3059: {e}")
 
         # --- WIT VPP Remote Control registers (30000+ range) ---
         # Control Authority (30100)

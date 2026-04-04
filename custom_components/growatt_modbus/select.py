@@ -103,12 +103,18 @@ async def async_setup_entry(
         )
         _LOGGER.info("%s control enabled (register %d found)", control_name, register_num)
 
-    # MOD TL3-XH TOU priority and enable selects (4 priority + 4 enable = 8 entities)
+    # MOD TL3-XH TOU priority and enable selects (9 periods × 2 = 18 entities)
     if 3038 in holding_registers:
         for period_def in MOD_TOU_PERIODS:
             entities.append(GrowattModTouPriority(coordinator, config_entry, period_def))
             entities.append(GrowattModTouEnable(coordinator, config_entry, period_def))
-        _LOGGER.info("MOD TOU priority/enable controls enabled (8 select entities for 4 periods)")
+        _LOGGER.info("MOD TOU priority/enable controls enabled (%d select entities for %d periods)",
+                     len(MOD_TOU_PERIODS) * 2, len(MOD_TOU_PERIODS))
+
+    # MOD GEN4 Allow Grid Charge gate (register 3049) — prerequisite for TOU persistence
+    if 3049 in holding_registers:
+        entities.append(GrowattModAllowGridChargeSelect(coordinator, config_entry))
+        _LOGGER.info("MOD Allow Grid Charge control enabled (register 3049)")
 
     if entities:
         entry_name = config_entry.data.get("name", config_entry.title)
@@ -711,4 +717,59 @@ class GrowattModTouEnable(CoordinatorEntity, SelectEntity):
             else:
                 _LOGGER.warning("MOD TOU period %d enable: write succeeded but value reverted (possible cloud override)", self._period)
             self.coordinator.track_write(self._start_reg, new_raw, self._start_field)
+            await self.coordinator.async_request_refresh()
+
+
+class GrowattModAllowGridChargeSelect(CoordinatorEntity, SelectEntity):
+    """Select entity for the MOD GEN4 'Allow Grid Charge' gate (register 3049).
+
+    This register must be set to Enabled (1) before TOU time slot registers
+    (3038-3059) will persist on GEN4 hardware.  Plain 0/1 register — no bit masking.
+    """
+
+    _REGISTER = 3049
+    _DATA_FIELD = "allow_grid_charge"
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_icon = "mdi:transmission-tower-export"
+    _attr_options = ["Disabled", "Enabled"]
+
+    def __init__(self, coordinator, config_entry) -> None:
+        """Initialize the Allow Grid Charge select."""
+        super().__init__(coordinator)
+        self._config_entry = config_entry
+        entry_name = config_entry.data.get("name", config_entry.title)
+        self._attr_name = f"{entry_name} Allow Grid Charge"
+        self._attr_unique_id = f"{config_entry.entry_id}_allow_grid_charge"
+
+    @property
+    def device_info(self):
+        """Return device information."""
+        return self.coordinator.get_device_info(DEVICE_TYPE_BATTERY)
+
+    @property
+    def current_option(self) -> str | None:
+        """Return current state."""
+        data = self.coordinator.data
+        if data is None:
+            return None
+        raw = getattr(data, self._DATA_FIELD, 0)
+        return "Enabled" if int(raw) else "Disabled"
+
+    async def async_select_option(self, option: str) -> None:
+        """Write new state to register 3049."""
+        value = 1 if option == "Enabled" else 0
+        try:
+            write_ok, verified = await self.hass.async_add_executor_job(
+                self.coordinator.modbus_client.write_register_verified, self._REGISTER, value,
+            )
+        except ModbusWriteError:
+            _LOGGER.error("Failed to write allow_grid_charge (register %d)", self._REGISTER)
+            return
+        if write_ok:
+            if verified:
+                _LOGGER.info("Set allow_grid_charge to %s (value=%d, verified)", option, value)
+            else:
+                _LOGGER.warning("allow_grid_charge: write succeeded but value reverted")
+            self.coordinator.track_write(self._REGISTER, value, self._DATA_FIELD)
             await self.coordinator.async_request_refresh()
