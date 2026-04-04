@@ -114,6 +114,7 @@ async def async_setup_entry(
 class GrowattGenericNumber(CoordinatorEntity, NumberEntity):
     """Generic number entity for any numeric control."""
 
+    _attr_has_entity_name = True
     _attr_mode = NumberMode.SLIDER
     _attr_entity_category = EntityCategory.CONFIG
 
@@ -139,7 +140,7 @@ class GrowattGenericNumber(CoordinatorEntity, NumberEntity):
             'vpp_export_limit_power_rate': 'VPP Export Limit Power Rate',
         }
         friendly_name = friendly_overrides.get(control_name, control_name.replace('_', ' ').title())
-        self._attr_name = f"{config_entry.data['name']} {friendly_name}"
+        self._attr_name = friendly_name
         self._attr_unique_id = f"{config_entry.entry_id}_{control_name}"
 
         # Set icon

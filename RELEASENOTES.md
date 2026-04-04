@@ -4,184 +4,262 @@
 
 ---
 
-## v0.6.6b3
+## v0.6.7
 
-- Night-time offline · #226 WIT battery_current · #224 MIN TL-XH via_device + log noise + spurious control_authority · #203 WIT control_authority side-effects
+Issues: #231 · #226 · #228
 
-### 🔧 Fix — Sensors Show 0 Instead of Unavailable When Inverter is Off at Night
+### Changes at a Glance
 
-When the RS485-to-TCP adapter was online but the inverter was sleeping (typical night-time), `TOTAL_INCREASING` energy sensors reported `0` rather than going unavailable. This caused HA's Energy Dashboard to record phantom counter resets and corrupted long-term statistics.
-
-**Root causes fixed:**
-
-1. **Empty register list not treated as failure** (`growatt_modbus.py`): When the adapter returns a valid TCP frame with an empty register list, the read loop silently populated nothing in the cache, causing all values to default to `0.0` via `or 0.0` fallbacks. The coordinator saw non-None data, set `_inverter_online = True`, and sensors reported zeros. Empty and short-count responses are now rejected as failures, correctly triggering offline behaviour.
-
-2. **Energy retention lost on HA restart** (`coordinator.py`): `_retained_lifetime_totals` and `_retained_daily_totals` were plain in-memory dicts, cleared on every restart. After a night restart, there was no protection against a dormant inverter returning zeros. These dicts are now persisted to HA storage (`.storage/growatt_modbus.<entry_id>_energy_totals`) — lifetime totals always restored, daily totals only if saved the same calendar day.
-
-3. **Wrong field names in stale-data debounce reset** (`coordinator.py`): The wakeup debounce reset was assigning to `data.battery_charge_today` / `data.battery_discharge_today` which don't exist in `GrowattData`. Corrected to `charge_energy_today` / `discharge_energy_today`.
-
-4. **Battery energy fields missing from midnight reset blocks** (`coordinator.py`): Both midnight reset paths now also zero `charge_energy_today`, `discharge_energy_today`, `ac_charge_energy_today`, `ac_discharge_energy_today`, `op_discharge_energy_today`.
+- **Entity ID regression fixed (#231):** v0.6.6's sub-device change caused entity IDs to grow a double prefix (e.g., `sensor.growatt_modbus_grid_growatt_modbus_energy_to_grid_today`). IDs are now correct and short. **All existing entity IDs are automatically migrated on first load — no manual action needed**, but automations/dashboards using the old bugged IDs will need updating.
+- **WIT battery current no longer drops to 0 A when the 8000-range block read fails intermittently (#226)** — critical registers are now retried individually after a failed block read.
+- **MOD HU (MOD 12-KTL3-HU, MOD TL3-XH) improvements (#228):**
+  - `pv1_energy_today`, `pv2_energy_today`, and `pv_energy_total` sensors now work (registers were missing from MOD profile)
+  - `charge_stopped_soc`, `discharge_stopped_soc`, `charge_power_rate`, and `ac_charge_enable` controls added to MOD profile
+  - Battery power now sourced from VPP range (31200/31201) — more reliable than the intermittent 3000-range charge/discharge registers
+  - DTC code 5401 (MOD 12-KTL3-HU) added to auto-detection — fresh installs now select the correct Hybrid profile automatically
 
 ---
 
-### 🔧 Fix — WIT Battery Current Always Shows 0 (Issue #226)
+### ⚠️ Important Upgrade Note — Entity ID Changes (#231)
 
-`battery_current` on WIT inverters has shown `0` since approximately v0.5.4. WIT's battery current register is at address **8035** (the 8000–8124 range). The battery register range detection scored only VPP (≥31000) and fallback (1000–3999) addresses, so 8035 was never scored. Detected range = `'vpp'`, filter `addr >= 31000` — register 8035 dropped → `battery_current = 0`.
+**This release changes entity IDs for all sensors, controls, and binary sensors.**
 
-**Fix** (`growatt_modbus.py`):
-- `_detect_battery_register_range()`: 8000–8999 addresses now count as VPP-tier (WIT's native battery range)
-- `_find_register_by_name_with_fallback()`: after the primary range filter returns empty, the 8000-range is checked as a secondary fallback for all range modes
+#### Background
 
-This also restores the battery power scale auto-detection which requires `battery_current != 0`.
+v0.6.6 introduced sub-devices (Solar, Grid, Load, Battery) so entities could be logically grouped in the Home Assistant device list. When an entity belongs to a sub-device, HA generates its entity ID by combining the sub-device slug with the entity name slug. This was unintentional at the time: because entity `_attr_name` still included the integration prefix ("Growatt Modbus …"), HA created IDs with a double prefix — for example:
 
-The 20% power overestimation reported in the same issue is **not yet addressed** — raw register scan data is needed to confirm whether it is a scale factor error or a different root cause.
+```text
+sensor.growatt_modbus_grid_growatt_modbus_energy_to_grid_today
+                         ↑ sub-device slug   ↑ entity name slug (still had prefix)
+```
+
+#### What the fix does
+
+Entity classes now set `has_entity_name = True` and use only the **short name** (e.g., "Energy to Grid Today"). HA then composes:
+
+```text
+{domain}.{device_slug}_{short_name_slug}
+sensor.growatt_modbus_grid_energy_to_grid_today
+```
+
+#### Automatic migration
+
+The integration migrates all existing entity IDs on first load using the entity registry (`unique_id` is the stable anchor — the entity's internal identity never changes, only its ID string). You will see log entries like:
+
+```text
+v0.6.7 entity ID migration: sensor.growatt_modbus_grid_growatt_modbus_energy_to_grid_today → sensor.growatt_modbus_grid_energy_to_grid_today
+```
+
+#### What you need to do
+
+**For most users: nothing.** HA will automatically update entity references in the Energy Dashboard and Lovelace cards that use entity IDs directly.
+
+**Check and update manually:**
+
+- Automations or scripts that reference entity IDs by string (not entity picker)
+- External integrations or Node-RED flows using the old IDs
+- Any custom Lovelace cards that hardcode entity IDs rather than using the entity picker
+
+#### New entity ID pattern (examples)
+
+| Entity | Old ID (v0.6.6 bugged) | New ID (v0.6.7) |
+| ------ | ---------------------- | --------------- |
+| Energy to Grid Today | `sensor.growatt_modbus_grid_growatt_modbus_energy_to_grid_today` | `sensor.growatt_modbus_grid_energy_to_grid_today` |
+| Battery SoC | `sensor.growatt_modbus_battery_growatt_modbus_battery_soc` | `sensor.growatt_modbus_battery_battery_soc` |
+| PV Energy Today | `sensor.growatt_modbus_solar_growatt_modbus_energy_today` | `sensor.growatt_modbus_solar_energy_today` |
+| House Consumption | `sensor.growatt_modbus_load_growatt_modbus_house_consumption` | `sensor.growatt_modbus_load_house_consumption` |
+| Inverter Status | `sensor.growatt_modbus_growatt_modbus_inverter_status` | `sensor.growatt_modbus_inverter_status` |
+
+> **Note:** If your integration name is not "Growatt Modbus" (e.g., you renamed it during setup), substitute your actual device name slug in the examples above.
 
 ---
 
-### 🔧 Fix — MIN TL-XH: Spurious Modbus Warnings at Startup + via_device Error (Issue #224)
+### 🔧 Fix — WIT Battery Current Drops to 0 A on Intermittent Block Read Failure (#226)
 
-**Two separate issues:**
+WIT inverters read battery registers from the 8000–8999 range in a single block. If that block read fails (intermittent RS485/TCP instability), all 8000-range registers are absent from the cache for that cycle. `battery_current` (register 8035) resolves to `None or 0.0 = 0.0`, so the entity shows 0 A — even when the battery is actively charging or discharging.
 
-**A) Startup Modbus warnings for 31000-range registers:**
-MIN TL-XH models receive `ExceptionResponse(exception_code=1)` (Illegal Function) for optional VPP registers (31000-31003, 31200-31222, etc.) that don't exist on the hardware. These errors were already suppressed after the first attempt via `_failed_optional_ranges`, but the first-attempt log message was at WARNING level. A new `log_errors` parameter on `read_input_registers()` downgrades the error to DEBUG for optional (non-critical) register ranges, eliminating the startup noise.
-
-**B) `via_device` race condition (breaking in HA 2025.12+):**
-Sub-devices (Solar, Grid, Load, Battery) reference `via_device = (DOMAIN, f"{entry_id}_inverter")`. The parent inverter device was created implicitly and could be missing from the HA device registry when sub-device sensors were registered, causing the "referencing a non-existing via_device" error. Fixed in `__init__.py` by explicitly pre-creating the parent inverter device using `device_registry.async_get_or_create()` before `async_forward_entry_setups()`.
+**Fix (`growatt_modbus.py`):** After any failed 8000-range block read, the five most critical registers (8034 battery voltage, 8035 battery current, 8093–8095 battery SoC / charge state) are retried individually. If a single-register read succeeds, that value is placed in the cache and used for the cycle. A warning log is emitted on block failure; per-register retry results are logged at DEBUG level.
 
 ---
 
-### 🔧 Fix — Control Authority Selector Shown on Unsupported Hardware (Issue #224)
+### 🔧 Fix — MOD HU: PV String Energy Sensors Always 0 (#228)
 
-`control_authority` (register 30100) is defined in several profiles (MIN TL-XH, MIN TL-X, SPH-TL3, MIC) as a VPP master-enable control. However, many units in these families do not implement the VPP 2.01 control register range in firmware, causing the select entity to appear in HA while any write would silently fail with an Illegal Function error.
+`pv1_energy_today`, `pv2_energy_today`, and `pv_energy_total` were absent from the MOD TL3-XH hybrid profile. The corresponding registers (59/60, 63/64, 91/92) are in the base 0–124 scan range and respond correctly on MOD HU hardware (confirmed: 9.2 kWh, 10.4 kWh, 3445 kWh).
 
-**Fix:** The `control_authority` select entity is now gated on a live hardware probe — the same pattern already used for `vpp_export_limit_enable`. A new `vpp_control_authority_available` flag is set only when register 30100 returns a valid response at startup. If the register is unresponsive, the entity is not created, and any pre-existing stale entity from a prior configuration is automatically removed from the entity registry on reload.
-
----
-
-### 🔧 Fix — WIT: Disabling Control Authority Resets Export Limit Mode (Issue #203)
-
-Disabling `control_authority` (register 30100 = 0) on WIT inverters transiently resets register 122 (`export_limit_mode`) to 0 as a hardware side-effect. On newer firmware (VPP V1.39) the inverter auto-restores the value when control authority is re-enabled, but older firmware does not — silently clearing the export limit configuration.
-
-**Fix** (`select.py`, `coordinator.py`): When writing `control_authority = Disabled`, the integration now reads and saves the current value of register 122 before the write. When `control_authority = Enabled` is written and verified, the saved value is automatically restored (with a 300ms delay to allow the inverter to process the control authority change). Only applies to WIT profiles.
+**Fix (`profiles/mod.py`):** Registers 59/60, 63/64, and 91/92 added to `MOD_6000_15000TL3_XH` `input_registers`.
 
 ---
 
-## v0.6.6b2
+### 🔧 Fix — MOD HU: Battery Power Intermittently Shows 0 (#228)
 
-- #206 · #212 · #214 · #204 · #18 · #131 · VPP sensor gating · Scanner improvements · Write verification · Cloud override detection · SPE profile
+The 3000-range charge/discharge registers (3178–3181) used as the primary battery power source on MOD HU are unreliable — they intermittently return 0 during the same poll cycle in which `battery_power` at VPP registers 31200/31201 shows the correct value (+1130 W charging in scan #228-2).
 
-### ✨ New — SPE 8000-12000 ES Profile (Issue #212)
+**Fix (`profiles/mod.py`):** Registers 31200/31201 renamed from `battery_power_vpp_high/low` to `battery_power_high/low`. With the `_vpp` suffix removed, the coordinator's standard fallback chain finds these registers as the primary signed battery power source. Charge/discharge power entities are then derived from the sign of `battery_power` — positive = charging, negative = discharging — consistent with the standard convention used by all other profiles.
 
-Added support for the **SPE 8000-12000 ES** single-phase hybrid inverter. Register scan analysis confirmed the SPE uses the same Modbus register protocol as the SPF series (registers 0-97) despite being a grid-tied hybrid with peak shaving capability.
+---
 
-**Features:** Dual MPPT trackers, battery storage, grid-tied peak shaving, parallel operation support (up to 108kW), dual outputs for smart load management.
+### New — MOD HU: Charge/Discharge SOC Controls (#228)
 
-**How it was identified:** Systematic comparison of a nighttime register scan against all known profiles. 15+ registers matched the SPF layout perfectly — battery voltage (53.67V at ×0.01 scale), SOC (97%), AC voltages (230.8V/231.0V), frequencies (49.99/50.02Hz), temperatures, and a fully consistent power balance (AC input 4280W ≈ Load 3157W + AC charge 1067W).
+The following controls now appear on MOD Hybrid installs. All four holding registers were confirmed responding in scan #228:
 
-**Auto-detection:** Model name patterns (SPE8000, SPE10000, SPE12000). Manual selection available as "SPE (8-12kW)" in config flow.
+| Control | Register | Description |
+| ------- | -------- | ----------- |
+| Discharge Stopped SoC | 1071 | Minimum SoC before battery stops discharging |
+| Charge Power Rate | 1090 | Battery charge power rate limit (0–100%) |
+| Charge Stopped SoC | 1091 | SoC level at which battery stops charging |
+| AC Charge Enable | 1092 | Allow charging from the grid (AC source) |
 
-**Affected files:** New `profiles/spe.py`, updated `profiles/__init__.py`, `device_profiles.py`, `auto_detection.py`.
+---
 
-### ✨ New — Write Verification & Cloud Override Detection (Issue #214)
+### New — Auto-Detection: DTC Code 5401 (#228)
 
-Control writes (priority mode, time schedules, export limits, etc.) now include **read-back verification** with automatic retry. After writing a register, the integration reads it back to confirm the value stuck. If the value reverts (e.g. overwritten by the Growatt cloud via ShineWiFi dongle), it retries up to 3 times.
+DTC code 5401 (reported by MOD 12-KTL3-HU hardware) was not in the detection map. Fresh installs fell back to heuristic detection and selected the grid-tied MOD profile instead of the Hybrid profile.
 
-**Cloud override detection:** If a verified write is later found to have reverted on the next poll cycle, the integration logs a warning and creates a **persistent notification** in the Home Assistant UI explaining the issue and how to resolve it (disconnect ShineWiFi dongle or disable cloud control in the Growatt app).
+**Fix (`auto_detection.py`):** DTC 5401 now maps to `mod_6000_15000tl3_xh_v201` (same as DTC 5400).
 
-**Config flow warning:** When setting up a battery-enabled inverter (SPH, SPF, MOD-XH, TL-XH, WIT), a persistent notification is shown warning that cloud-connected dongles may override local controls.
+---
 
-**Affected files:** `growatt_modbus.py` (new `write_register_verified()` method), `coordinator.py` (write tracking + deferred override detection), `select.py`, `number.py`, `time.py` (8 write methods updated), `config_flow.py` (cloud warning notification).
+## v0.6.6
+
+Issues: #203 · #204 · #18 · #131 · #206 · #212 · #214 · #224 · #226
+
+### Summary
+
+- Energy sensors no longer show 0 or corrupt totals when the inverter is offline or sleeping at night — energy totals are now persisted across HA restarts
+- WIT battery current fixed (had shown 0 since ~v0.5.4)
+- MIN TL-XH startup Modbus warning spam and `via_device` error eliminated
+- Control entities (`control_authority`, VPP export limit) now gated on live hardware probe — no longer appear on hardware that doesn't support them
+- WIT: disabling control authority no longer silently resets export limit mode
+- TL-XH / MOD / WIT `serial_number` sensor entity now shows correct VPP serial from registers 3001–3005 (was showing garbled data from legacy registers)
+- SPE 8000-12000 ES profile added
+- Write verification with automatic retry on all control writes; cloud override detection with persistent HA notification
+- MOD TL3-XH TOU schedule controls (4 time periods)
+- SPF battery power and energy sensors fixed (were showing 0 due to voltage guard and offline classification issues)
+- Universal Register Scanner: VPP control ranges and MOD holding ranges added
+
+---
+
+### 🔧 Fix — Energy Sensors Show 0 at Night / After HA Restart (Issues #206, re-fix)
+
+Two further root causes found after the v0.6.6b2 fix for issue #206:
+
+1. **Empty register response not treated as failure** (`growatt_modbus.py`): When the RS485-to-TCP adapter is online but the inverter is sleeping, some adapters return a valid TCP frame with an empty register list. This passed the non-None check, set `_inverter_online = True`, and all sensor values defaulted to `0.0`. Empty and short-count responses are now rejected as read failures, correctly triggering offline behaviour.
+
+2. **Energy retention not persisted across HA restarts** (`coordinator.py`): `_retained_lifetime_totals` and `_retained_daily_totals` were in-memory dicts, cleared on every restart. After a nighttime HA restart, there was no retained baseline to compare against when the dormant inverter returned zeros. These dicts are now persisted to HA storage (`.storage/growatt_modbus.<entry_id>_energy_totals`) — lifetime totals always restored; daily totals restored only if saved on the same calendar day.
+
+3. **Wrong field names in debounce reset** (`coordinator.py`): The wakeup debounce was assigning to `data.battery_charge_today` / `data.battery_discharge_today` (non-existent fields). Corrected to `charge_energy_today` / `discharge_energy_today`.
+
+4. **Battery energy fields missing from midnight reset** (`coordinator.py`): Both midnight reset paths now zero `charge_energy_today`, `discharge_energy_today`, `ac_charge_energy_today`, `ac_discharge_energy_today`, `op_discharge_energy_today`.
 
 ---
 
 ### 🔧 Fix — Energy Totals Dropping to Zero on Dormant/Offline Inverters (Issue #206)
 
-`total_increasing` energy sensors (lifetime and daily totals) were returning `0` when the inverter was dormant at night or truly offline. This caused HA's Energy Dashboard to record phantom counter resets — massive energy spikes in statistics.
+`total_increasing` energy sensors returned `0` when the inverter was dormant at night or truly offline, causing phantom counter resets in the HA Energy Dashboard.
 
-**Two root causes identified:**
+**Two root causes:**
 
-1. **Dormant inverter (responds to Modbus with zeros):** Many inverters stay powered at night (battery/grid) and respond to Modbus queries, but return `0` for all production and energy registers. The integration treated this as valid data since the connection succeeded — `_inverter_online = True`, offline behavior never activated.
+1. **Dormant inverter:** Stays powered (battery/grid) and responds to Modbus but returns `0` for all production registers. Connection succeeds → `_inverter_online = True` → sensors report zeros.
+2. **Truly offline inverter:** Coordinator returned cached data with `last_update_success = True` → entities stayed "available" → HA recorded stale flatlines as real data.
 
-2. **Truly offline inverter (no Modbus response):** The coordinator returned cached data with `last_update_success = True`, so entities remained "available" — HA recorded stale flatline values as real measurements.
+**Fix:**
 
-**Fix — two-layer protection:**
-
-- **`available = False` when offline:** Sensor entities now override the `available` property to check `coordinator.is_online`. When the inverter stops responding, ALL entities go `unavailable`. HA's statistics engine ignores unavailable states — clean gaps, no phantom data.
-
-- **Dormant-inverter retention:** New `_protect_energy_totals()` in the coordinator tracks last known non-zero values for all `total_increasing` attrs. When the hardware reports `0` but a non-zero value was previously seen, the retained value is substituted. Only blocks drops to exactly `0` — non-zero decreases (register jitter) pass through normally. Daily retention clears at midnight so the new day starts fresh.
-
-**Affected files:** `const.py` (new `LIFETIME_TOTAL_ATTRS` / `DAILY_TOTAL_ATTRS` lists), `coordinator.py` (retention logic + midnight clearing), `sensor.py` (`available` property override).
+- **`available = False` when offline:** Sensor entities check `coordinator.is_online`. All entities go unavailable when the inverter stops responding — statistics engine ignores unavailable states.
+- **Dormant-inverter retention:** `_protect_energy_totals()` tracks last known non-zero values. When hardware reports `0` but a non-zero was previously seen, the retained value is substituted. Daily retention clears at midnight.
 
 ---
 
-### 🔧 Fix — Stale `number` Time Period Entities Persist After Upgrade (Issue #214)
+### 🔧 Fix — WIT Battery Current Always Shows 0 (Issue #226)
 
-After upgrading from pre-v0.6.4, the old `number` platform entities for `time_period_*_start` and `time_period_*_end` remained in the HA entity registry alongside the new `time` platform entities, causing duplicates.
+WIT's `battery_current` register is at address 8035 (8000–8124 range). Battery range detection only scored VPP (≥31000) and fallback (1000–3999) addresses — 8035 was never scored, range resolved as `'vpp'`, filter `addr >= 31000` excluded register 8035 → `battery_current = 0`.
 
-**Fix:** Added entity registry migration in `__init__.py` that automatically removes stale `number` platform entities for `time_period_*_start/end` on the next HA restart.
+**Fix** (`growatt_modbus.py`): 8000–8999 addresses now count as VPP-tier in `_detect_battery_register_range()`. `_find_register_by_name_with_fallback()` also checks the 8000-range as a secondary fallback when the primary range filter returns empty. This also restores battery power scale auto-detection which requires `battery_current != 0`.
+
+The 20% power overestimation noted in the same issue is not yet addressed — register scan data needed to confirm root cause.
+
+---
+
+### 🔧 Fix — MIN TL-XH: Startup Warning Spam + via_device Error (Issue #224)
+
+**A) Startup Modbus warnings:** MIN TL-XH receives `ExceptionResponse(exception_code=1)` for optional VPP registers (31000+) that don't exist on its firmware. These were already suppressed after the first attempt via `_failed_optional_ranges`, but the first-attempt log was at WARNING level. A new `log_errors` parameter on `read_input_registers()` downgrades first-attempt errors to DEBUG for optional register ranges.
+
+**B) `via_device` race condition (HA 2025.12+):** Sub-devices reference `via_device = (DOMAIN, f"{entry_id}_inverter")`. The parent device could be missing from the registry when sub-device sensors registered, causing "referencing a non-existing via_device" errors. Fixed by explicitly pre-creating the parent inverter device in `__init__.py` using `device_registry.async_get_or_create()` before `async_forward_entry_setups()`.
+
+---
+
+### 🔧 Fix — Control Authority Selector Shown on Unsupported Hardware (Issue #224)
+
+`control_authority` (register 30100) appeared as a select entity on MIN TL-XH, MIN TL-X, and other profiles where the hardware does not implement the VPP 2.01 control register range. Any write silently failed with Illegal Function.
+
+**Fix:** The entity is now gated on a live hardware probe — same pattern as `vpp_export_limit_enable`. A `vpp_control_authority_available` flag is set only when register 30100 returns a valid response at startup. If unresponsive, the entity is not created and any pre-existing stale entity is removed from the entity registry on reload.
+
+---
+
+### 🔧 Fix — TL-XH / MOD / WIT Serial Number Entity Shows Incorrect Value
+
+The `serial_number` sensor entity on VPP-range models read from holding registers 9–13 (legacy base range), which on VPP firmware does not contain the serial number — producing garbled output (e.g. "AL1.0ZAba").
+
+VPP-range models store the serial number in holding registers 3001–3005 (10 ASCII chars, one pair per register). After the legacy read, affected profiles now attempt a second read of that range. If the result is a valid Growatt-format serial (≥4 chars, first two letters), it overrides; otherwise the legacy value is kept as fallback.
+
+**Models affected:** All profiles with `TL_XH`, `MOD_`, or `WIT_` in the register map name. Note: the HA Devices & Services serial was already correct via the coordinator's separate read path — only the sensor entity was wrong.
+
+---
+
+### 🔧 Fix — WIT: Disabling Control Authority Resets Export Limit Mode (Issue #203)
+
+Disabling `control_authority` (register 30100 = 0) transiently resets register 122 (`export_limit_mode`) to 0 as a WIT hardware side-effect. Older firmware does not auto-restore the value, silently clearing the export limit configuration.
+
+**Fix** (`select.py`, `coordinator.py`): Register 122 is read and saved before writing `control_authority = Disabled`. When `control_authority = Enabled` is written and verified, the saved value is restored after a 300ms delay. WIT profiles only.
+
+---
+
+### ✨ New — SPE 8000-12000 ES Profile (Issue #212)
+
+Added support for the **SPE 8000-12000 ES** single-phase hybrid inverter. Register scan analysis confirmed it uses the same Modbus register protocol as SPF (registers 0–97), despite being grid-tied with peak shaving capability. Features: dual MPPT, battery storage, peak shaving, parallel operation (up to 108kW), dual outputs.
+
+Auto-detection via model name patterns (SPE8000, SPE10000, SPE12000). Manual selection available as "SPE (8-12kW)".
+
+---
+
+### ✨ New — Write Verification & Cloud Override Detection (Issue #214)
+
+All control writes now include **read-back verification** with up to 3 retries. If a verified write is later found to have reverted on the next poll cycle (e.g. overwritten by ShineWiFi dongle), a **persistent notification** appears in HA explaining the issue. A setup warning is also shown when configuring a battery-enabled inverter with a cloud dongle detected.
+
+---
+
+### 🔧 Fix — Stale Time Period `number` Entities After Upgrade (Issue #214)
+
+After upgrading from pre-v0.6.4, old `number` platform `time_period_*_start/end` entities remained alongside the new `time` platform entities. Entity registry migration in `__init__.py` removes the stale entities automatically on HA restart.
 
 ---
 
 ### 🔧 Fix — VPP Export Limit Controls Appear on Non-VPP Inverters
 
-MIN TL-X (and other non-VPP inverters) showed `VPP Export Limit Enable` and `VPP Export Limit Power Rate` controls even though the hardware does not support these registers.
+MIN TL-X and other non-VPP inverters showed `VPP Export Limit Enable` and `VPP Export Limit Power Rate` controls even though the hardware does not support registers 30200–30201.
 
-**Root cause:** MIN V2.01 profiles define holding registers 30200–30201. The select/number platform setup creates entities for any register present in the profile, without verifying the hardware responds.
-
-**Fix:** The coordinator now tracks whether registers 30200–30201 actually responded during the first data read (`vpp_export_limit_available` flag). Entity creation is gated on this flag. A migration in `__init__.py` removes stale entities on the next restart for inverters where the registers are not responsive.
+**Fix:** Entity creation is gated on a `vpp_export_limit_available` flag set only when those registers respond. Stale entities are removed on reload.
 
 ---
 
 ### ✨ New — MOD TL3-XH TOU Schedule Controls (Issue #131)
 
-**MOD Hybrid (6-15kW)** users can now set Time-of-Use schedule periods directly from Home Assistant. 16 new entities per inverter:
-
-- **4 × Time Period Start** (HH:MM time picker) — periods 1–4
-- **4 × Time Period End** (HH:MM time picker) — periods 1–4
-- **4 × Priority** (select: Load Priority / Battery Priority / Grid Priority)
-- **4 × Enable** (select: Enabled / Disabled)
-
-Uses MOD TL3-XH holding registers 3038–3045 (FC04). Start registers use bit-packed encoding: `bit15=enable, bit13-14=priority, bit8-12=hour, bit0-7=minute`. Writes use read-modify-write to preserve priority/enable bits when adjusting time.
+MOD Hybrid users can now set Time-of-Use schedule periods from Home Assistant: 4 × time period start (HH:MM), 4 × end, 4 × priority (Load/Battery/Grid), 4 × enable. Uses holding registers 3038–3045 with bit-packed encoding (`bit15=enable, bit13-14=priority, bit8-12=hour, bit0-7=minute`).
 
 ---
 
 ### 🔧 Fix — SPF Battery Power and Energy Sensors Showing Zero (Issues #204, #18)
 
-**SPF** off-grid inverter users reported battery power, charge/discharge energy totals, and AC input power all showing `0` even while the inverter was active.
+Three root causes fixed:
 
-**Root causes and fixes:**
-
-1. **Offline behavior regression (issue #206 — already noted above):** `battery_charge_total`, `battery_discharge_total` showed `0` when offline due to `GrowattData` initialising all fields to `0.0`. Fixed by setting both `daily_total` and `lifetime_total` offline behavior to `unavailable`.
-
-2. **Missing offline behavior for SPF-specific sensors:** `ac_charge_energy_total`, `ac_discharge_energy_total`, and `generator_discharge_total` were not classified in `SENSOR_TYPES`, defaulting to `diagnostic` behavior (unavailable offline) instead of `lifetime_total` (unavailable). Similarly, `ac_input_power`, `ac_apparent_power`, and `load_power` were not classified as `power` sensors, so they went unavailable instead of `0` when offline. **Fixed:** Added all missing entries to the correct `SENSOR_TYPES` categories.
-
-3. **Battery power incorrectly zeroed when SOC > 0:** The 10V voltage threshold guard (introduced to prevent garbage readings from a disconnected battery) also blocked power readings for connected batteries that report `0V` in certain modes (e.g. bypass/standby on some SPF firmware). The guard now requires **both** voltage `< 10V` **and** SOC `< 5%` before zeroing battery power — if SOC > 5%, the battery is present and power registers are trusted.
+1. **Offline behaviour classification:** `battery_charge_total`, `battery_discharge_total`, `ac_charge_energy_total`, and related sensors were not correctly classified in `SENSOR_TYPES`, causing them to drop to 0 when offline instead of going unavailable.
+2. **AC input / load power offline behaviour:** `ac_input_power`, `ac_apparent_power`, and `load_power` were not classified as `power` sensors, causing them to go unavailable when they should hold `0` while offline.
+3. **Battery power zeroed at SOC > 0:** The 10V voltage guard (to prevent garbage readings from a disconnected battery) also blocked power readings from connected batteries reporting 0V in bypass/standby. The guard now requires **both** voltage `< 10V` **and** SOC `< 5%` before zeroing battery power.
 
 ---
 
-### ✨ New — Universal Scanner: VPP Control Ranges + Group Selection
+### ✨ New — Universal Scanner: VPP Control Ranges + MOD Holding Ranges
 
-The scanner service now supports scanning VPP control holding registers (30100–30499):
-
-- `VPP System Control 30100–30129`
-- `VPP AC Control 30150–30216`
-- `VPP Battery Control 30300–30499`
-
-Each scan range group can be individually enabled/disabled via service parameters:
-`scan_legacy`, `scan_storage`, `scan_mod_extended`, `scan_wit`, `scan_vpp_control`, `scan_vpp_data`
-
----
-
-### ✨ New — Universal Scanner: MOD Holding Ranges + Extended 3250–3374
-
-The register scanner now includes MOD TL3-XH FC04 (holding) ranges that were previously missing:
-
-- `MOD Holding 3000–3124` — includes TOU registers 3038–3045
-- `MOD Holding 3125–3249`
-- `MOD Extended Input 3250–3374`
-- `MOD Extended Holding 3250–3374`
-
-These appear in the CSV output when `Scan MIN/MOD Extended Registers` is enabled.
+Scanner now covers VPP control holding registers (30100–30499, individually enabled via `scan_vpp_control`) and MOD TL3-XH FC04 holding ranges including TOU registers 3038–3045 (`scan_mod_extended`).
 
 ---
 

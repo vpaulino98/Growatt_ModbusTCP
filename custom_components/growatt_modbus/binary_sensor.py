@@ -40,6 +40,7 @@ async def async_setup_entry(
 class GrowattInverterOnlineSensor(CoordinatorEntity, BinarySensorEntity):
     """Binary sensor for inverter online status."""
 
+    _attr_has_entity_name = True
     _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
@@ -52,7 +53,7 @@ class GrowattInverterOnlineSensor(CoordinatorEntity, BinarySensorEntity):
         super().__init__(coordinator)
 
         self._config_entry = config_entry
-        self._attr_name = f"{config_entry.data['name']} Inverter Online"
+        self._attr_name = "Inverter Online"
         self._attr_unique_id = f"{config_entry.entry_id}_inverter_online"
         self._attr_icon = "mdi:solar-power-variant"
 
