@@ -9,6 +9,20 @@
 > **Beta release** — MOD GEN4 TOU reversion fix + extended schedule support for MOD and SPH.
 > Field-test recommended before deploying to production. See verification steps below.
 
+---
+
+### ⚠️ BREAKING CHANGE from v0.6.6 — Entity ID Changes (#231)
+
+> **If you are upgrading from v0.6.6**, all entity IDs changed in v0.6.7. This also affects upgrades from v0.6.6 to v0.6.8b1.
+>
+> v0.6.6 introduced sub-devices (Solar, Grid, Load, Battery) but left the integration prefix in entity names, causing HA to generate IDs with a double prefix — for example `sensor.growatt_modbus_grid_growatt_modbus_energy_to_grid_today`.
+>
+> **v0.6.7 corrected this.** Entity IDs are now short and clean — e.g. `sensor.growatt_modbus_grid_energy_to_grid_today`. The entity registry and statistics history are migrated automatically, but **the Energy Dashboard, automations, Lovelace cards, and any other configuration that references entity IDs by string must be updated manually.**
+>
+> See the [full migration guide in the v0.6.7 release notes](#v067) below for the complete before/after ID table and details.
+
+---
+
 ### Changes at a Glance
 
 - **MOD GEN4 — TOU reversion root cause fixed:** Register 3049 ("Allow Grid Charge") was
@@ -24,6 +38,8 @@
 - **SPH GEN3 — Extended time periods:** Battery First extended slots 4–6 (registers
   1017–1025) and Grid First extended slots 4–9 (registers 1026–1034 and 1080–1088) are
   now exposed as time picker and enable select entities.
+- **MOD — Grid Power now correct when 3000-range registers return 0 (#228):** On some MOD firmware, registers 3043/3044 (`power_to_grid`) return 0 while the VPP meter registers 31112/31113 carry the correct signed value. The coordinator now falls back to the VPP meter registers when the 3000-range reads zero.
+- **WIT — Battery current now correct when VPP register 31215 returns 0 (#226):** Some WIT firmware variants do not implement `Ibat` in the VPP register range. The coordinator now cascades through native register 8035, then 3000-range register 3170, before accepting 0 A.
 - **New control guide:** `docs/CONTROLS.md` replaces the WIT-only `WIT_CONTROL_GUIDE.md`
   with comprehensive per-model instructions, SVG diagrams, and automation examples for
   MOD, SPH, WIT, and SPF.
@@ -191,14 +207,39 @@ time picker entities for the relevant slot group.
 
 ---
 
+### 🔧 Fix — MOD: Grid Power Shows 0 or Wrong Direction (#228)
+
+On MOD inverters (e.g. `mod_6000_15000tl3_x`), the 3000-range registers 3043/3044 (`power_to_grid_high/low`) return 0 on some firmware builds even when the inverter is actively importing or exporting. Because `power_to_grid` was 0, the `grid_power` sensor fell through to the fallback calculation `(solar + discharge) − (load + charge)`, which can produce an incorrect or opposite-sign result.
+
+The VPP registers 31112/31113 (`meter_power`) carry the correct signed 32-bit value for the same measurement (positive = export, negative = import). In the confirmed scan: 3044 = 0 while 31113 decoded to **−9,601.8 W** (importing).
+
+**Fix:**
+
+- `profiles/mod.py`: `maps_to='power_to_grid_low'` added to register 31113 so it is found by the fallback lookup.
+- `growatt_modbus.py`: When the primary `power_to_grid_low` (3044) reads 0, the coordinator now tries `meter_power_low` (31113 via `_find_register_by_name_with_fallback`) before accepting 0 W. Non-zero VPP value is used and logged at DEBUG.
+
+---
+
+### 🔧 Fix — WIT: Battery Current Shows 0 When VPP Register 31215 Returns 0 (#226)
+
+Some WIT firmware variants do not implement `Ibat` in the VPP cluster register 31215 — it returns 0 permanently while the battery is actively charging or discharging. Because VPP was the preferred range (voltage and SOC via VPP were correct), the coordinator selected 31215, read 0, and never tried the native 8000-range register 8035 (which held the correct signed value, e.g. raw 65477 = −5.9 A charging).
+
+**Fix:**
+
+- `growatt_modbus.py`: Battery current now cascades — VPP (31215) → native 8035 → 3000-range 3170 — before accepting 0 A. A non-zero value at any fallback stage short-circuits the chain and is logged at DEBUG.
+- `profiles/wit.py`: Registers 3169/3170/3171 added as internal fallback sources (`battery_voltage_3k`, `battery_current_3k`, `battery_soc_3k`). These are not exposed as HA sensors.
+
+---
+
 ### Files Changed
 
 | File | Change |
 |------|--------|
-| `profiles/mod.py` | Added registers 3049 and 3050–3059 to MOD_6000_15000TL3_XH holding_registers |
+| `profiles/mod.py` | Added registers 3049 and 3050–3059 to MOD_6000_15000TL3_XH holding_registers; `maps_to='power_to_grid_low'` on register 31113 |
 | `profiles/sph.py` | Added registers 1017–1034 and 1080–1088 to SPH_3000_6000 and SPH_7000_10000 |
+| `profiles/wit.py` | Added registers 3169–3171 as internal battery fallback sources |
 | `const.py` | Extended MOD_TOU_PERIODS to 9 entries; added allow_grid_charge and SPH extended periods to WRITABLE_REGISTERS |
-| `growatt_modbus.py` | Added GrowattData fields and coordinator reads for all new registers |
+| `growatt_modbus.py` | Added GrowattData fields and coordinator reads for all new registers; power_to_grid VPP fallback; battery_current cascade |
 | `select.py` | Added GrowattModAllowGridChargeSelect class |
 | `time.py` | Replaced dual single-register writes with atomic FC16 pair writes for GrowattModTouTime |
 | `docs/CONTROLS.md` | New comprehensive control guide covering all model families |
@@ -210,9 +251,11 @@ time picker entities for the relevant slot group.
 
 Issues: #231 · #226 · #228
 
+> ⚠️ **BREAKING CHANGE (upgrading from v0.6.6):** All entity IDs changed in this release. The integration migrates them automatically on first load, but automations, scripts, and dashboards that reference entity IDs by string must be updated manually. See the full details in the migration guide section below.
+
 ### Changes at a Glance
 
-- **Entity ID regression fixed (#231):** v0.6.6's sub-device change caused entity IDs to grow a double prefix (e.g., `sensor.growatt_modbus_grid_growatt_modbus_energy_to_grid_today`). IDs are now correct and short. **All existing entity IDs are automatically migrated on first load — no manual action needed**, but automations/dashboards using the old bugged IDs will need updating.
+- **Entity ID regression fixed (#231):** v0.6.6's sub-device change caused entity IDs to grow a double prefix (e.g., `sensor.growatt_modbus_grid_growatt_modbus_energy_to_grid_today`). IDs are now correct and short. **All existing entity IDs are automatically migrated on first load**, but automations/dashboards using the old bugged IDs will need updating.
 - **WIT battery current no longer drops to 0 A when the 8000-range block read fails intermittently (#226)** — critical registers are now retried individually after a failed block read.
 - **MOD HU (MOD 12-KTL3-HU, MOD TL3-XH) improvements (#228):**
   - `pv1_energy_today`, `pv2_energy_today`, and `pv_energy_total` sensors now work (registers were missing from MOD profile)
@@ -222,7 +265,7 @@ Issues: #231 · #226 · #228
 
 ---
 
-### ⚠️ Important Upgrade Note — Entity ID Changes (#231)
+### ⚠️ BREAKING CHANGE — Entity IDs Changed for All Entities (#231)
 
 **This release changes entity IDs for all sensors, controls, and binary sensors.**
 
@@ -254,13 +297,14 @@ v0.6.7 entity ID migration: sensor.growatt_modbus_grid_growatt_modbus_energy_to_
 
 #### What you need to do
 
-**For most users: nothing.** HA will automatically update entity references in the Energy Dashboard and Lovelace cards that use entity IDs directly.
+The entity registry migration is automatic — the integration's entities will appear under their new IDs immediately, and **long-term statistics history is preserved** (HA keys statistics to the stable `unique_id`, not the entity ID string).
 
-**Check and update manually:**
+**However, the following do NOT update automatically and must be reconfigured manually:**
 
-- Automations or scripts that reference entity IDs by string (not entity picker)
-- External integrations or Node-RED flows using the old IDs
-- Any custom Lovelace cards that hardcode entity IDs rather than using the entity picker
+- **Energy Dashboard** — HA stores the Energy Dashboard configuration as hardcoded entity ID strings in `.storage/energy`. You must re-open Settings → Energy and re-select each sensor (grid import/export, solar production, battery charge/discharge, etc.) using the new IDs.
+- **Automations or scripts** that reference entity IDs by string (not the entity picker)
+- **Lovelace dashboard cards** that hardcode entity IDs rather than using the entity picker
+- **External integrations or Node-RED flows** using the old IDs
 
 #### New entity ID pattern (examples)
 

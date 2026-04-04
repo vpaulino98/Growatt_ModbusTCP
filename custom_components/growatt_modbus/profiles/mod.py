@@ -227,9 +227,12 @@ MOD_6000_15000TL3_XH = {
         31323: {'name': 'battery2_temp', 'scale': 0.1, 'unit': '°C', 'signed': True},
 
         # === V2.01 VPP ADDITIONAL REGISTERS ===
-        # Grid/Meter Power (same as PtoGrid at 3043/3044)
-        31112: {'name': 'meter_power_high', 'scale': 1, 'unit': '', 'pair': 31113, 'maps_to': 'power_to_grid', 'desc': 'Meter power (same as PtoGrid)'},
-        31113: {'name': 'meter_power_low', 'scale': 1, 'unit': '', 'pair': 31112, 'combined_scale': 0.1, 'combined_unit': 'W', 'signed': True},
+        # Grid/Meter Power — VPP signed 32-bit (positive=export, negative=import)
+        # Register 3043/3044 (power_to_grid_high/low) returns 0 on some MOD firmware when
+        # the VPP range is active; 31112/31113 (meter_power) carries the correct signed value.
+        # maps_to on the LOW word triggers the power_to_grid_low fallback lookup in the coordinator.
+        31112: {'name': 'meter_power_high', 'scale': 1, 'unit': '', 'pair': 31113, 'desc': 'Meter power HIGH (same as PtoGrid)'},
+        31113: {'name': 'meter_power_low', 'scale': 1, 'unit': '', 'pair': 31112, 'combined_scale': 0.1, 'combined_unit': 'W', 'signed': True, 'maps_to': 'power_to_grid_low', 'desc': 'Meter power LOW — fallback for power_to_grid when 3044=0'},
 
         # Load Power (same as PtoLoad at 3045/3046)
         31118: {'name': 'load_power_high_vpp', 'scale': 1, 'unit': '', 'pair': 31119, 'maps_to': 'power_to_load'},

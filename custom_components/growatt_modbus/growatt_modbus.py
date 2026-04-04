@@ -1275,13 +1275,25 @@ class GrowattModbus:
 
             # Power Flow (if available - storage/hybrid models)
             power_to_user_addr = self._find_register_by_name('power_to_user_low')
-            power_to_grid_addr = self._find_register_by_name('power_to_grid_low')
             power_to_load_addr = self._find_register_by_name('power_to_load_low')
-            
+
+            # power_to_grid: prefer native 3044, fall back to VPP meter_power (31113 maps_to power_to_grid_low)
+            # On some MOD firmware the 3000-range registers return 0 while the VPP meter registers are correct.
+            power_to_grid_addr = self._find_register_by_name('power_to_grid_low')
+            if power_to_grid_addr:
+                ptg_val = self._get_register_value(power_to_grid_addr)
+                if ptg_val is None or ptg_val == 0.0:
+                    # Try VPP fallback (31113 maps_to='power_to_grid_low' in MOD profile)
+                    vpp_addr = self._find_register_by_name_with_fallback('power_to_grid_low')
+                    if vpp_addr and vpp_addr != power_to_grid_addr:
+                        vpp_val = self._get_register_value(vpp_addr)
+                        if vpp_val is not None and vpp_val != 0.0:
+                            ptg_val = vpp_val
+                            logger.debug(f"power_to_grid 3044=0, using VPP meter reg {vpp_addr}: {ptg_val}W")
+                data.power_to_grid = ptg_val if ptg_val is not None else 0.0
+
             if power_to_user_addr:
                 data.power_to_user = self._get_register_value(power_to_user_addr) or 0.0
-            if power_to_grid_addr:
-                data.power_to_grid = self._get_register_value(power_to_grid_addr) or 0.0
             if power_to_load_addr:
                 data.power_to_load = self._get_register_value(power_to_load_addr) or 0.0
             
@@ -1981,17 +1993,34 @@ class GrowattModbus:
                 data.battery_voltage = 0.0
 
             # Battery current (signed: positive=discharge, negative=charge)
-            # Use range-aware lookup to respect VPP vs fallback detection
+            # Cascade: VPP (31215) → native 8035 → 3k-range 3170
+            # Some WIT firmware variants return 0 on VPP register 31215 while 8035/3170 are correct.
             addr = self._find_register_by_name_with_fallback('battery_current_low')
             if not addr:
-                # Fallback to single-register name (used by legacy/WIT maps)
                 addr = self._find_register_by_name_with_fallback('battery_current')
             if not addr:
-                # Fallback to legacy register (3170)
                 addr = self._find_register_by_name('battery_current_legacy')
+
             if addr:
-                data.battery_current = self._get_register_value(addr) or 0.0
-                logger.debug(f"Battery current from reg {addr}: {data.battery_current}A")
+                value = self._get_register_value(addr)
+                # VPP returned 0 — try native 8000-range register before accepting zero
+                if (value is None or value == 0.0) and addr >= 31000:
+                    native_addr = self._find_register_by_name('battery_current')  # 8035 (name match only, not maps_to)
+                    if native_addr and native_addr != addr:
+                        native_val = self._get_register_value(native_addr)
+                        if native_val is not None and native_val != 0.0:
+                            value = native_val
+                            logger.debug(f"VPP battery_current=0, using native reg {native_addr}: {value}A")
+                # Still 0 — try 3k-range fallback (register 3170 on WIT if profile includes it)
+                if value is None or value == 0.0:
+                    fallback_addr = self._find_register_by_name('battery_current_3k')
+                    if fallback_addr:
+                        fallback_val = self._get_register_value(fallback_addr)
+                        if fallback_val is not None and fallback_val != 0.0:
+                            value = fallback_val
+                            logger.debug(f"Using 3k battery_current from reg {fallback_addr}: {value}A")
+                data.battery_current = value if value is not None else 0.0
+                logger.debug(f"Battery current: {data.battery_current}A (primary reg {addr})")
 
             # Battery SOC (use smart fallback if multiple ranges available)
             value = self._get_register_value_with_fallback('battery_soc')
