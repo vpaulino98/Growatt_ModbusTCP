@@ -458,6 +458,51 @@ WRITABLE_REGISTERS = {
         },
         'desc': 'Enable time period 3'
     },
+
+    # SPH GEN3 Battery First extended time slots 4-6 (registers 1017-1025)
+    'batt_first_time_period_4_start': {'register': 1017, 'scale': 1, 'valid_range': (0, 5947), 'unit': '', 'desc': 'Battery First period 4 start (hex-packed: hours*256+minutes)'},
+    'batt_first_time_period_4_end':   {'register': 1018, 'scale': 1, 'valid_range': (0, 5947), 'unit': '', 'desc': 'Battery First period 4 end (hex-packed: hours*256+minutes)'},
+    'batt_first_time_period_4_enable': {'register': 1019, 'scale': 1, 'valid_range': (0, 1), 'options': {0: 'Disabled', 1: 'Enabled'}, 'desc': 'Enable Battery First period 4'},
+    'batt_first_time_period_5_start': {'register': 1020, 'scale': 1, 'valid_range': (0, 5947), 'unit': '', 'desc': 'Battery First period 5 start (hex-packed: hours*256+minutes)'},
+    'batt_first_time_period_5_end':   {'register': 1021, 'scale': 1, 'valid_range': (0, 5947), 'unit': '', 'desc': 'Battery First period 5 end (hex-packed: hours*256+minutes)'},
+    'batt_first_time_period_5_enable': {'register': 1022, 'scale': 1, 'valid_range': (0, 1), 'options': {0: 'Disabled', 1: 'Enabled'}, 'desc': 'Enable Battery First period 5'},
+    'batt_first_time_period_6_start': {'register': 1023, 'scale': 1, 'valid_range': (0, 5947), 'unit': '', 'desc': 'Battery First period 6 start (hex-packed: hours*256+minutes)'},
+    'batt_first_time_period_6_end':   {'register': 1024, 'scale': 1, 'valid_range': (0, 5947), 'unit': '', 'desc': 'Battery First period 6 end (hex-packed: hours*256+minutes)'},
+    'batt_first_time_period_6_enable': {'register': 1025, 'scale': 1, 'valid_range': (0, 1), 'options': {0: 'Disabled', 1: 'Enabled'}, 'desc': 'Enable Battery First period 6'},
+
+    # SPH GEN3 Grid First extended time slots 4-6 (registers 1026-1034)
+    'grid_first_time_period_4_start': {'register': 1026, 'scale': 1, 'valid_range': (0, 5947), 'unit': '', 'desc': 'Grid First period 4 start (hex-packed: hours*256+minutes)'},
+    'grid_first_time_period_4_end':   {'register': 1027, 'scale': 1, 'valid_range': (0, 5947), 'unit': '', 'desc': 'Grid First period 4 end (hex-packed: hours*256+minutes)'},
+    'grid_first_time_period_4_enable': {'register': 1028, 'scale': 1, 'valid_range': (0, 1), 'options': {0: 'Disabled', 1: 'Enabled'}, 'desc': 'Enable Grid First period 4'},
+    'grid_first_time_period_5_start': {'register': 1029, 'scale': 1, 'valid_range': (0, 5947), 'unit': '', 'desc': 'Grid First period 5 start (hex-packed: hours*256+minutes)'},
+    'grid_first_time_period_5_end':   {'register': 1030, 'scale': 1, 'valid_range': (0, 5947), 'unit': '', 'desc': 'Grid First period 5 end (hex-packed: hours*256+minutes)'},
+    'grid_first_time_period_5_enable': {'register': 1031, 'scale': 1, 'valid_range': (0, 1), 'options': {0: 'Disabled', 1: 'Enabled'}, 'desc': 'Enable Grid First period 5'},
+    'grid_first_time_period_6_start': {'register': 1032, 'scale': 1, 'valid_range': (0, 5947), 'unit': '', 'desc': 'Grid First period 6 start (hex-packed: hours*256+minutes)'},
+    'grid_first_time_period_6_end':   {'register': 1033, 'scale': 1, 'valid_range': (0, 5947), 'unit': '', 'desc': 'Grid First period 6 end (hex-packed: hours*256+minutes)'},
+    'grid_first_time_period_6_enable': {'register': 1034, 'scale': 1, 'valid_range': (0, 1), 'options': {0: 'Disabled', 1: 'Enabled'}, 'desc': 'Enable Grid First period 6'},
+
+    # SPH GEN3 Grid First extended time slots 7-9 (registers 1080-1088)
+    'grid_first_time_period_7_start': {'register': 1080, 'scale': 1, 'valid_range': (0, 5947), 'unit': '', 'desc': 'Grid First period 7 start (hex-packed: hours*256+minutes)'},
+    'grid_first_time_period_7_end':   {'register': 1081, 'scale': 1, 'valid_range': (0, 5947), 'unit': '', 'desc': 'Grid First period 7 end (hex-packed: hours*256+minutes)'},
+    'grid_first_time_period_7_enable': {'register': 1082, 'scale': 1, 'valid_range': (0, 1), 'options': {0: 'Disabled', 1: 'Enabled'}, 'desc': 'Enable Grid First period 7'},
+    'grid_first_time_period_8_start': {'register': 1083, 'scale': 1, 'valid_range': (0, 5947), 'unit': '', 'desc': 'Grid First period 8 start (hex-packed: hours*256+minutes)'},
+    'grid_first_time_period_8_end':   {'register': 1084, 'scale': 1, 'valid_range': (0, 5947), 'unit': '', 'desc': 'Grid First period 8 end (hex-packed: hours*256+minutes)'},
+    'grid_first_time_period_8_enable': {'register': 1085, 'scale': 1, 'valid_range': (0, 1), 'options': {0: 'Disabled', 1: 'Enabled'}, 'desc': 'Enable Grid First period 8'},
+    'grid_first_time_period_9_start': {'register': 1086, 'scale': 1, 'valid_range': (0, 5947), 'unit': '', 'desc': 'Grid First period 9 start (hex-packed: hours*256+minutes)'},
+    'grid_first_time_period_9_end':   {'register': 1087, 'scale': 1, 'valid_range': (0, 5947), 'unit': '', 'desc': 'Grid First period 9 end (hex-packed: hours*256+minutes)'},
+    'grid_first_time_period_9_enable': {'register': 1088, 'scale': 1, 'valid_range': (0, 1), 'options': {0: 'Disabled', 1: 'Enabled'}, 'desc': 'Enable Grid First period 9'},
+
+    # MOD GEN4 grid-charge prerequisite gate (must be Enabled for TOU writes to persist)
+    'allow_grid_charge': {
+        'register': 3049,
+        'scale': 1,
+        'valid_range': (0, 1),
+        'options': {
+            0: 'Disabled',
+            1: 'Enabled'
+        },
+        'desc': 'Allow Grid Charge — prerequisite gate for TOU persistence (MOD GEN4)',
+    },
 }
 
 # Sensor offline behavior mapping
@@ -640,7 +685,11 @@ def get_device_type_for_control(control_name: str) -> str:
         # SPF off-grid battery controls
         'charge_config', 'charge_current', 'bat_low', 'ac_to_bat',
         # SPH hybrid battery controls
-        'priority_mode', 'time_period', 'ac_charge_enable'
+        'priority_mode', 'time_period', 'ac_charge_enable',
+        # MOD GEN4 battery charging gate
+        'allow_grid_charge',
+        # SPH GEN3 extended time slots (batt_first_* already caught by 'battery' but explicit here)
+        'batt_first', 'grid_first',
     ]):
         return DEVICE_TYPE_BATTERY
 
@@ -670,13 +719,19 @@ def get_device_type_for_control(control_name: str) -> str:
     return DEVICE_TYPE_INVERTER
 
 
-# MOD TL3-XH TOU period register definitions (FC04 holding registers 3038-3045)
+# MOD TL3-XH TOU period register definitions (FC04 holding registers 3038-3059)
+# Slots 1-4: 3038-3045; gap at 3046-3049 (EMS/grid-charge); slots 5-9: 3050-3059
 # Used by time.py (time pickers) and select.py (priority/enable selects)
 MOD_TOU_PERIODS = [
     {"period": 1, "start_reg": 3038, "end_reg": 3039, "start_field": "mod_tou_1_start", "end_field": "mod_tou_1_end"},
     {"period": 2, "start_reg": 3040, "end_reg": 3041, "start_field": "mod_tou_2_start", "end_field": "mod_tou_2_end"},
     {"period": 3, "start_reg": 3042, "end_reg": 3043, "start_field": "mod_tou_3_start", "end_field": "mod_tou_3_end"},
     {"period": 4, "start_reg": 3044, "end_reg": 3045, "start_field": "mod_tou_4_start", "end_field": "mod_tou_4_end"},
+    {"period": 5, "start_reg": 3050, "end_reg": 3051, "start_field": "mod_tou_5_start", "end_field": "mod_tou_5_end"},
+    {"period": 6, "start_reg": 3052, "end_reg": 3053, "start_field": "mod_tou_6_start", "end_field": "mod_tou_6_end"},
+    {"period": 7, "start_reg": 3054, "end_reg": 3055, "start_field": "mod_tou_7_start", "end_field": "mod_tou_7_end"},
+    {"period": 8, "start_reg": 3056, "end_reg": 3057, "start_field": "mod_tou_8_start", "end_field": "mod_tou_8_end"},
+    {"period": 9, "start_reg": 3058, "end_reg": 3059, "start_field": "mod_tou_9_start", "end_field": "mod_tou_9_end"},
 ]
 
 

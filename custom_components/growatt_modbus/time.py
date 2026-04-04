@@ -49,7 +49,8 @@ async def async_setup_entry(
             p = period_def["period"]
             entities.append(GrowattModTouTime(coordinator, config_entry, period_def, is_start=True))
             entities.append(GrowattModTouTime(coordinator, config_entry, period_def, is_start=False))
-        _LOGGER.info("MOD TOU time controls enabled (8 time entities for 4 periods)")
+        _LOGGER.info("MOD TOU time controls enabled (%d time entities for %d periods)",
+                     len(MOD_TOU_PERIODS) * 2, len(MOD_TOU_PERIODS))
 
     if entities:
         _LOGGER.info("Created %d time entities for %s", len(entities), config_entry.data['name'])
@@ -204,37 +205,51 @@ class GrowattModTouTime(CoordinatorEntity, TimeEntity):
             return None
 
     async def async_set_value(self, value: dt_time) -> None:
-        """Write time to the register, using read-modify-write for start registers."""
-        if self._is_start:
-            # Read-modify-write: preserve priority (bits 13-14) and enable (bit 15)
-            data = self.coordinator.data
-            current_raw = getattr(data, self._data_field, 0) if data else 0
-            new_raw = (int(current_raw) & 0xE000) | ((value.hour << 8) | value.minute)
-        else:
-            # End register: plain hex-packed write
-            new_raw = (value.hour << 8) | value.minute
+        """Write time atomically — always write start+end together as a single FC16 transaction.
 
+        Writing both registers in one Modbus FC16 call prevents the inverter from ever seeing
+        a partial update (start changed but end not yet written), which can cause TOU reversion.
+        """
+        data = self.coordinator.data
+        period = self._period_def
+
+        # Compute new start raw, preserving priority (bits 13-14) and enable (bit 15)
+        current_start = int(getattr(data, period["start_field"], 0) if data else 0)
+        if self._is_start:
+            new_start = (current_start & 0xE000) | ((value.hour << 8) | value.minute)
+        else:
+            new_start = current_start  # unchanged — keep current start when writing end
+
+        # Compute new end raw (plain hex-packed)
+        current_end = int(getattr(data, period["end_field"], 0) if data else 0)
+        if not self._is_start:
+            new_end = (value.hour << 8) | value.minute
+        else:
+            new_end = current_end  # unchanged — keep current end when writing start
+
+        slot = "start" if self._is_start else "end"
         try:
-            write_ok, verified = await self.hass.async_add_executor_job(
-                self.coordinator.modbus_client.write_register_verified, self._register, new_raw,
+            success = await self.hass.async_add_executor_job(
+                self.coordinator.modbus_client.write_registers,
+                period["start_reg"],
+                [new_start, new_end],
             )
         except ModbusWriteError:
             _LOGGER.error(
-                "Failed to write MOD TOU period %d %s (register %d)",
-                self._period, "start" if self._is_start else "end", self._register,
+                "Failed to write MOD TOU period %d %s (atomic FC16 to register %d)",
+                self._period, slot, period["start_reg"],
             )
             return
-        if write_ok:
-            slot = "start" if self._is_start else "end"
-            if verified:
-                _LOGGER.info(
-                    "Set MOD TOU period %d %s to %s (raw=0x%04X=%d, verified)",
-                    self._period, slot, value.strftime("%H:%M"), new_raw, new_raw,
-                )
-            else:
-                _LOGGER.warning(
-                    "MOD TOU period %d %s: write succeeded but value reverted (possible cloud override)",
-                    self._period, slot,
-                )
-            self.coordinator.track_write(self._register, new_raw, self._data_field)
+        if success:
+            _LOGGER.info(
+                "Set MOD TOU period %d %s to %s (start=0x%04X, end=0x%04X, atomic FC16)",
+                self._period, slot, value.strftime("%H:%M"), new_start, new_end,
+            )
+            self.coordinator.track_write(period["start_reg"], new_start, period["start_field"])
+            self.coordinator.track_write(period["end_reg"], new_end, period["end_field"])
             await self.coordinator.async_request_refresh()
+        else:
+            _LOGGER.warning(
+                "MOD TOU period %d %s: atomic FC16 write returned False",
+                self._period, slot,
+            )

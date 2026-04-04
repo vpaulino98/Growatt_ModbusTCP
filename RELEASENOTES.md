@@ -4,6 +4,208 @@
 
 ---
 
+## v0.6.8b1
+
+> **Beta release** — MOD GEN4 TOU reversion fix + extended schedule support for MOD and SPH.
+> Field-test recommended before deploying to production. See verification steps below.
+
+### Changes at a Glance
+
+- **MOD GEN4 — TOU reversion root cause fixed:** Register 3049 ("Allow Grid Charge") was
+  missing from the integration. On GEN4 hardware this register is a prerequisite gate —
+  without it enabled, the firmware silently discards TOU writes after each cloud sync
+  cycle. A new **"Allow Grid Charge"** select entity is now exposed under the Battery device.
+- **MOD GEN4 — TOU slots 5–9 added:** GEN4 hardware supports 9 time slots
+  (registers 3038–3059, with a gap at 3046–3049 for EMS controls). Only slots 1–4 were
+  previously implemented. Slots 5–9 (registers 3050–3059) are now fully supported.
+- **MOD GEN4 — Atomic FC16 writes for TOU:** Start and end registers for each TOU slot
+  are now written together in a single Modbus FC16 transaction, eliminating the window
+  where the inverter could see a partially-updated schedule.
+- **SPH GEN3 — Extended time periods:** Battery First extended slots 4–6 (registers
+  1017–1025) and Grid First extended slots 4–9 (registers 1026–1034 and 1080–1088) are
+  now exposed as time picker and enable select entities.
+- **New control guide:** `docs/CONTROLS.md` replaces the WIT-only `WIT_CONTROL_GUIDE.md`
+  with comprehensive per-model instructions, SVG diagrams, and automation examples for
+  MOD, SPH, WIT, and SPF.
+
+---
+
+### MOD GEN4 — How to Use the New TOU Control
+
+> **Read this before configuring TOU on a MOD GEN4 inverter.**
+
+#### Why TOU was reverting
+
+Growatt's GEN4 firmware implements a software gate on all TOU register writes.
+Register 3049 ("Allow Grid Charge") must be set to `1 (Enabled)` before the inverter
+will accept and persist TOU schedule changes. When it is `0 (Disabled)`, the firmware
+accepts the Modbus write without error but reapplies its own defaults on the next
+firmware tick — typically within 30–90 seconds.
+
+This gate is documented in the `wills106/homeassistant-solax-modbus` Growatt plugin,
+which successfully manages TOU on the same hardware. Our integration previously had no
+awareness of this register.
+
+#### Step 1 — Enable Allow Grid Charge (one-time)
+
+In Home Assistant, open the **Battery** device for your inverter and locate the new
+**"Allow Grid Charge"** select entity. Set it to **Enabled**.
+
+To verify the write was accepted, check the entity state after the next poll cycle
+(~30 seconds). It should remain "Enabled".
+
+You can also verify using the diagnostic service:
+
+```yaml
+service: growatt_modbus.read_register
+data:
+  register_type: holding
+  register_address: 3049
+  count: 1
+target:
+  device_id: YOUR_DEVICE_ID
+```
+
+The response should be `1`. If it immediately reverts to `0`, the ShineWiFi dongle cloud
+sync may be resetting it — disable cloud sync in the dongle's web UI if your firmware
+supports it.
+
+#### Step 2 — Configure TOU Periods (9 slots)
+
+All 9 TOU slots are now available. For each slot you want active:
+
+1. Set **TOU Period N Start** (time picker entity)
+2. Set **TOU Period N End** (time picker entity)
+3. Set **TOU Period N Priority** → `Load Priority`, `Battery Priority`, or `Grid Priority`
+4. Set **TOU Period N Enable** → `Enabled`
+
+Slots 1–4 use registers 3038–3045 (same as before). Slots 5–9 use registers 3050–3059
+(new). Leave unused slots Disabled.
+
+> **Note on the register gap:** Registers 3046–3049 are EMS controls, not TOU slots.
+> The jump from slot 4 (ends at 3045) to slot 5 (starts at 3050) is intentional.
+
+#### Step 3 — Verify persistence
+
+After setting a TOU period, wait 60–90 seconds and re-read the start register to confirm
+the value held. Use debug logging to confirm:
+
+```yaml
+logger:
+  logs:
+    custom_components.growatt_modbus: debug
+```
+
+Look for `[MOD TOU] periods 1-4 start: ...` log lines — if the values match what you
+wrote, TOU is working. If they revert, re-check Step 1 (register 3049).
+
+#### Slots 5–9 register verification
+
+Before relying on slots 5–9, confirm your inverter hardware responds to those registers:
+
+```yaml
+service: growatt_modbus.read_register
+data:
+  register_type: holding
+  register_address: 3050
+  count: 10
+target:
+  device_id: YOUR_DEVICE_ID
+```
+
+If the inverter returns data (not a Modbus exception), slots 5–9 are supported.
+
+#### Atomic writes — what changed internally
+
+Previous versions wrote TOU start and end registers independently (two separate FC06
+writes). This created a brief window where the inverter held a valid start time but a
+stale end time, which could cause TOU reversion on sensitive firmware builds.
+
+Version 0.6.8b1 writes both registers together using a single Modbus FC16
+(write multiple registers) transaction — the same method used by the Solax Modbus
+integration and by our own WIT VPP control path. There is no change to entity behaviour
+or the HA UI — the improvement is internal.
+
+---
+
+### SPH GEN3 — Extended Time Periods
+
+SPH GEN3 inverters support up to 9 Battery First time windows and 9 Grid First time
+windows in hardware. Previously only 3 AC charge periods (registers 1100–1108) were
+exposed.
+
+**New entities (all under the Battery device):**
+
+| Entity group | Registers | Slots |
+|---|---|---|
+| Battery First time periods | 1017–1025 | Slots 4–6 |
+| Grid First time periods | 1026–1034 | Slots 4–6 |
+| Grid First time periods | 1080–1088 | Slots 7–9 |
+
+Each slot provides:
+- A **start time** picker entity
+- An **end time** picker entity
+- An **enable** select entity (`Disabled` / `Enabled`)
+
+**How to use:**
+
+Set the global **Priority Mode** (register 1044) to `Battery First` or `Grid First` to
+select which set of time slots is active. Then configure individual windows using the
+time picker entities for the relevant slot group.
+
+> **Hardware validation note:** These registers are documented in the Growatt protocol
+> specification and confirmed present in the Solax Modbus Growatt plugin for
+> `HYBRID | GEN3` models. If your specific SPH model does not respond to these registers
+> (i.e., the entities appear but always read 0 and writes are not accepted), please open
+> an issue with your register scanner CSV.
+
+> **SPH HU note:** SPH 8000–10000 TL-HU uses a different register architecture where
+> battery management holding registers (1044, 1070–1108) return Modbus exceptions.
+> The extended time period registers (1017–1088) have not been validated on HU hardware.
+> HU users should leave these entities unconfigured until hardware confirmation is available.
+
+---
+
+### New and Updated Entities
+
+**MOD GEN4 (TL3-XH profile only):**
+
+| Entity | Type | Register | New? |
+|--------|------|----------|------|
+| Allow Grid Charge | Select | 3049 | New |
+| TOU Period 5 Start / End | Time | 3050, 3051 | New |
+| TOU Period 5 Priority | Select | 3050 (bits) | New |
+| TOU Period 5 Enable | Select | 3050 (bit 15) | New |
+| TOU Period 6–9 (×4) | Time + Select ×2 | 3052–3059 | New |
+
+**SPH GEN3 (3000–10000 TL profiles):**
+
+| Entity group | Type | Registers | New? |
+|---|---|---|---|
+| Batt First Period 4–6 Start/End | Time (×6) | 1017–1025 | New |
+| Batt First Period 4–6 Enable | Select (×3) | 1019, 1022, 1025 | New |
+| Grid First Period 4–6 Start/End | Time (×6) | 1026–1034 | New |
+| Grid First Period 4–6 Enable | Select (×3) | 1028, 1031, 1034 | New |
+| Grid First Period 7–9 Start/End | Time (×6) | 1080–1088 | New |
+| Grid First Period 7–9 Enable | Select (×3) | 1082, 1085, 1088 | New |
+
+---
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `profiles/mod.py` | Added registers 3049 and 3050–3059 to MOD_6000_15000TL3_XH holding_registers |
+| `profiles/sph.py` | Added registers 1017–1034 and 1080–1088 to SPH_3000_6000 and SPH_7000_10000 |
+| `const.py` | Extended MOD_TOU_PERIODS to 9 entries; added allow_grid_charge and SPH extended periods to WRITABLE_REGISTERS |
+| `growatt_modbus.py` | Added GrowattData fields and coordinator reads for all new registers |
+| `select.py` | Added GrowattModAllowGridChargeSelect class |
+| `time.py` | Replaced dual single-register writes with atomic FC16 pair writes for GrowattModTouTime |
+| `docs/CONTROLS.md` | New comprehensive control guide covering all model families |
+| `docs/images/` | New SVG diagrams: tou-register-map, mod-tou-setup-flow, sph-time-periods, control-model-comparison |
+
+---
+
 ## v0.6.7
 
 Issues: #231 · #226 · #228

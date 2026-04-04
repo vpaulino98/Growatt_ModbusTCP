@@ -303,6 +303,32 @@ MOD_6000_15000TL3_XH = {
                'desc': 'TOU Period 4 start: bit15=enable, bit13-14=priority, bit8-12=hour, bit0-7=min'},
         3045: {'name': 'mod_tou_4_end',   'scale': 1, 'unit': '', 'access': 'RW',
                'desc': 'TOU Period 4 end: bit8-12=hour, bit0-7=min'},
+
+        # EMS / grid-charge controls (3046-3049) — NOT TOU slots
+        3049: {'name': 'allow_grid_charge', 'scale': 1, 'unit': '', 'access': 'RW',
+               'desc': 'Allow Grid Charge — must be Enabled (1) for TOU writes to persist (GEN4)'},
+
+        # TOU slots 5-9 (3050-3059; gap at 3046-3049 is intentional — EMS/grid-charge regs)
+        3050: {'name': 'mod_tou_5_start', 'scale': 1, 'unit': '', 'access': 'RW',
+               'desc': 'TOU Period 5 start: bit15=enable, bit13-14=priority, bit8-12=hour, bit0-7=min'},
+        3051: {'name': 'mod_tou_5_end',   'scale': 1, 'unit': '', 'access': 'RW',
+               'desc': 'TOU Period 5 end: bit8-12=hour, bit0-7=min'},
+        3052: {'name': 'mod_tou_6_start', 'scale': 1, 'unit': '', 'access': 'RW',
+               'desc': 'TOU Period 6 start: bit15=enable, bit13-14=priority, bit8-12=hour, bit0-7=min'},
+        3053: {'name': 'mod_tou_6_end',   'scale': 1, 'unit': '', 'access': 'RW',
+               'desc': 'TOU Period 6 end: bit8-12=hour, bit0-7=min'},
+        3054: {'name': 'mod_tou_7_start', 'scale': 1, 'unit': '', 'access': 'RW',
+               'desc': 'TOU Period 7 start: bit15=enable, bit13-14=priority, bit8-12=hour, bit0-7=min'},
+        3055: {'name': 'mod_tou_7_end',   'scale': 1, 'unit': '', 'access': 'RW',
+               'desc': 'TOU Period 7 end: bit8-12=hour, bit0-7=min'},
+        3056: {'name': 'mod_tou_8_start', 'scale': 1, 'unit': '', 'access': 'RW',
+               'desc': 'TOU Period 8 start: bit15=enable, bit13-14=priority, bit8-12=hour, bit0-7=min'},
+        3057: {'name': 'mod_tou_8_end',   'scale': 1, 'unit': '', 'access': 'RW',
+               'desc': 'TOU Period 8 end: bit8-12=hour, bit0-7=min'},
+        3058: {'name': 'mod_tou_9_start', 'scale': 1, 'unit': '', 'access': 'RW',
+               'desc': 'TOU Period 9 start: bit15=enable, bit13-14=priority, bit8-12=hour, bit0-7=min'},
+        3059: {'name': 'mod_tou_9_end',   'scale': 1, 'unit': '', 'access': 'RW',
+               'desc': 'TOU Period 9 end: bit8-12=hour, bit0-7=min'},
     }
 }
 

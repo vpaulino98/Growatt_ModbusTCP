@@ -271,6 +271,19 @@ class GrowattData:
     mod_tou_3_end:   int = 0
     mod_tou_4_start: int = 0
     mod_tou_4_end:   int = 0
+    # MOD GEN4 TOU slots 5-9 (registers 3050-3059; gap at 3046-3049 is EMS/grid-charge controls)
+    mod_tou_5_start: int = 0
+    mod_tou_5_end:   int = 0
+    mod_tou_6_start: int = 0
+    mod_tou_6_end:   int = 0
+    mod_tou_7_start: int = 0
+    mod_tou_7_end:   int = 0
+    mod_tou_8_start: int = 0
+    mod_tou_8_end:   int = 0
+    mod_tou_9_start: int = 0
+    mod_tou_9_end:   int = 0
+    # MOD GEN4 prerequisite gate for TOU persistence (register 3049)
+    allow_grid_charge: int = 0
 
     time_period_1_enable: int = 0     # 0=Disabled, 1=Enabled
     time_period_1_start: int = 0      # hex-packed (hours*256+minutes, e.g. 06:00 = 0x0600 = 1536)
@@ -281,6 +294,36 @@ class GrowattData:
     time_period_3_enable: int = 0     # 0=Disabled, 1=Enabled
     time_period_3_start: int = 0      # hex-packed
     time_period_3_end: int = 0        # hex-packed
+    # SPH GEN3 Battery First extended slots 4-6 (registers 1017-1025)
+    batt_first_time_period_4_start: int = 0
+    batt_first_time_period_4_end:   int = 0
+    batt_first_time_period_4_enable: int = 0
+    batt_first_time_period_5_start: int = 0
+    batt_first_time_period_5_end:   int = 0
+    batt_first_time_period_5_enable: int = 0
+    batt_first_time_period_6_start: int = 0
+    batt_first_time_period_6_end:   int = 0
+    batt_first_time_period_6_enable: int = 0
+    # SPH GEN3 Grid First extended slots 4-6 (registers 1026-1034)
+    grid_first_time_period_4_start: int = 0
+    grid_first_time_period_4_end:   int = 0
+    grid_first_time_period_4_enable: int = 0
+    grid_first_time_period_5_start: int = 0
+    grid_first_time_period_5_end:   int = 0
+    grid_first_time_period_5_enable: int = 0
+    grid_first_time_period_6_start: int = 0
+    grid_first_time_period_6_end:   int = 0
+    grid_first_time_period_6_enable: int = 0
+    # SPH GEN3 Grid First extended slots 7-9 (registers 1080-1088)
+    grid_first_time_period_7_start: int = 0
+    grid_first_time_period_7_end:   int = 0
+    grid_first_time_period_7_enable: int = 0
+    grid_first_time_period_8_start: int = 0
+    grid_first_time_period_8_end:   int = 0
+    grid_first_time_period_8_enable: int = 0
+    grid_first_time_period_9_start: int = 0
+    grid_first_time_period_9_end:   int = 0
+    grid_first_time_period_9_enable: int = 0
 
     # SPF Off-Grid Control registers
     output_config: int = 0            # 0=SBU, 1=SOL, 2=UTI, 3=SUB
@@ -2426,6 +2469,60 @@ class GrowattModbus:
             except Exception as e:
                 logger.debug(f"Could not read time period control registers: {e}")
 
+        # SPH GEN3 Battery First extended slots 4-6 (registers 1017-1025)
+        if any(reg in holding_map for reg in range(1017, 1026)):
+            try:
+                bf_regs = self.read_holding_registers(1017, 9)
+                if bf_regs is not None and len(bf_regs) >= 9:
+                    if 1017 in holding_map: data.batt_first_time_period_4_start  = int(bf_regs[0])
+                    if 1018 in holding_map: data.batt_first_time_period_4_end    = int(bf_regs[1])
+                    if 1019 in holding_map: data.batt_first_time_period_4_enable = int(bf_regs[2])
+                    if 1020 in holding_map: data.batt_first_time_period_5_start  = int(bf_regs[3])
+                    if 1021 in holding_map: data.batt_first_time_period_5_end    = int(bf_regs[4])
+                    if 1022 in holding_map: data.batt_first_time_period_5_enable = int(bf_regs[5])
+                    if 1023 in holding_map: data.batt_first_time_period_6_start  = int(bf_regs[6])
+                    if 1024 in holding_map: data.batt_first_time_period_6_end    = int(bf_regs[7])
+                    if 1025 in holding_map: data.batt_first_time_period_6_enable = int(bf_regs[8])
+                    logger.debug("[SPH CTRL] Battery First periods 4-6 loaded")
+            except Exception as e:
+                logger.debug(f"Could not read Battery First extended time period registers 1017-1025: {e}")
+
+        # SPH GEN3 Grid First extended slots 4-6 (registers 1026-1034)
+        if any(reg in holding_map for reg in range(1026, 1035)):
+            try:
+                gf46_regs = self.read_holding_registers(1026, 9)
+                if gf46_regs is not None and len(gf46_regs) >= 9:
+                    if 1026 in holding_map: data.grid_first_time_period_4_start  = int(gf46_regs[0])
+                    if 1027 in holding_map: data.grid_first_time_period_4_end    = int(gf46_regs[1])
+                    if 1028 in holding_map: data.grid_first_time_period_4_enable = int(gf46_regs[2])
+                    if 1029 in holding_map: data.grid_first_time_period_5_start  = int(gf46_regs[3])
+                    if 1030 in holding_map: data.grid_first_time_period_5_end    = int(gf46_regs[4])
+                    if 1031 in holding_map: data.grid_first_time_period_5_enable = int(gf46_regs[5])
+                    if 1032 in holding_map: data.grid_first_time_period_6_start  = int(gf46_regs[6])
+                    if 1033 in holding_map: data.grid_first_time_period_6_end    = int(gf46_regs[7])
+                    if 1034 in holding_map: data.grid_first_time_period_6_enable = int(gf46_regs[8])
+                    logger.debug("[SPH CTRL] Grid First periods 4-6 loaded")
+            except Exception as e:
+                logger.debug(f"Could not read Grid First extended time period registers 1026-1034: {e}")
+
+        # SPH GEN3 Grid First extended slots 7-9 (registers 1080-1088)
+        if any(reg in holding_map for reg in range(1080, 1089)):
+            try:
+                gf79_regs = self.read_holding_registers(1080, 9)
+                if gf79_regs is not None and len(gf79_regs) >= 9:
+                    if 1080 in holding_map: data.grid_first_time_period_7_start  = int(gf79_regs[0])
+                    if 1081 in holding_map: data.grid_first_time_period_7_end    = int(gf79_regs[1])
+                    if 1082 in holding_map: data.grid_first_time_period_7_enable = int(gf79_regs[2])
+                    if 1083 in holding_map: data.grid_first_time_period_8_start  = int(gf79_regs[3])
+                    if 1084 in holding_map: data.grid_first_time_period_8_end    = int(gf79_regs[4])
+                    if 1085 in holding_map: data.grid_first_time_period_8_enable = int(gf79_regs[5])
+                    if 1086 in holding_map: data.grid_first_time_period_9_start  = int(gf79_regs[6])
+                    if 1087 in holding_map: data.grid_first_time_period_9_end    = int(gf79_regs[7])
+                    if 1088 in holding_map: data.grid_first_time_period_9_enable = int(gf79_regs[8])
+                    logger.debug("[SPH CTRL] Grid First periods 7-9 loaded")
+            except Exception as e:
+                logger.debug(f"Could not read Grid First extended time period registers 1080-1088: {e}")
+
         # MOD TL3-XH TOU schedule (FC04 holding registers 3038-3045)
         if 3038 in holding_map:
             try:
@@ -2444,6 +2541,39 @@ class GrowattModbus:
                                  data.mod_tou_1_end, data.mod_tou_2_end, data.mod_tou_3_end, data.mod_tou_4_end)
             except Exception as e:
                 logger.debug(f"Could not read MOD TOU registers 3038-3045: {e}")
+
+        # MOD GEN4 Allow Grid Charge gate (register 3049)
+        if 3049 in holding_map:
+            try:
+                agc_regs = self.read_holding_registers(3049, 1)
+                if agc_regs is not None and len(agc_regs) >= 1:
+                    data.allow_grid_charge = int(agc_regs[0])
+                    logger.debug("[MOD TOU] allow_grid_charge=%s", data.allow_grid_charge)
+            except Exception as e:
+                logger.debug(f"Could not read allow_grid_charge register 3049: {e}")
+
+        # MOD TL3-XH TOU slots 5-9 (registers 3050-3059)
+        if 3050 in holding_map:
+            try:
+                tou59_regs = self.read_holding_registers(3050, 10)
+                if tou59_regs is not None and len(tou59_regs) >= 10:
+                    data.mod_tou_5_start = int(tou59_regs[0])
+                    data.mod_tou_5_end   = int(tou59_regs[1])
+                    data.mod_tou_6_start = int(tou59_regs[2])
+                    data.mod_tou_6_end   = int(tou59_regs[3])
+                    data.mod_tou_7_start = int(tou59_regs[4])
+                    data.mod_tou_7_end   = int(tou59_regs[5])
+                    data.mod_tou_8_start = int(tou59_regs[6])
+                    data.mod_tou_8_end   = int(tou59_regs[7])
+                    data.mod_tou_9_start = int(tou59_regs[8])
+                    data.mod_tou_9_end   = int(tou59_regs[9])
+                    logger.debug("[MOD TOU] periods 5-9 start: %s %s %s %s %s, end: %s %s %s %s %s",
+                                 data.mod_tou_5_start, data.mod_tou_6_start, data.mod_tou_7_start,
+                                 data.mod_tou_8_start, data.mod_tou_9_start,
+                                 data.mod_tou_5_end, data.mod_tou_6_end, data.mod_tou_7_end,
+                                 data.mod_tou_8_end, data.mod_tou_9_end)
+            except Exception as e:
+                logger.debug(f"Could not read MOD TOU registers 3050-3059: {e}")
 
         # --- WIT VPP Remote Control registers (30000+ range) ---
         # Control Authority (30100)

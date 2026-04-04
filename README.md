@@ -1,7 +1,7 @@
 # Growatt Modbus Integration for Home Assistant ☀️
 
 ![HACS Badge](https://img.shields.io/badge/HACS-Custom-orange.svg)
-![Version](https://img.shields.io/badge/Version-0.6.7-blue.svg)
+![Version](https://img.shields.io/badge/Version-0.6.8b1-blue.svg)
 [![GitHub Issues](https://img.shields.io/github/issues/0xAHA/Growatt_ModbusTCP.svg)](https://github.com/0xAHA/Growatt_ModbusTCP/issues)
 [![GitHub Stars](https://img.shields.io/github/stars/0xAHA/Growatt_ModbusTCP.svg?style=social)](https://github.com/0xAHA/Growatt_ModbusTCP)
 
@@ -103,7 +103,7 @@ Understanding which sensor measures what is the most common source of confusion.
 
 📖 **[Full model specifications, protocol details, and sensor availability →](docs/MODELS.md)**
 
-📖 **[Inverter control guide (SPH / SPF / WIT / MOD) →](docs/CONTROL.md)**
+📖 **[Inverter control guide (SPH / SPF / WIT / MOD) →](docs/CONTROLS.md)**
 
 ---
 
@@ -295,16 +295,13 @@ The integration pre-configures sensors with the correct `state_class` and `devic
 
 See **[RELEASENOTES.md](RELEASENOTES.md)** for the full changelog.
 
-**v0.6.6 highlights:**
+**v0.6.8b1 highlights:**
 
-- Night-time offline sensors no longer show 0 or corrupt energy totals
-- WIT battery current fixed (was always showing 0)
-- MIN TL-XH startup Modbus warnings eliminated
-- Control entities (control_authority, VPP export limit) now gated on live hardware probe — won't appear if hardware doesn't support them
-- Energy totals persisted across HA restarts
-- WIT control_authority side-effect on export limit mode fixed
-- SPF battery power sign correction during PV charging
-- SPE 8–12kW ES profile added
+- **MOD GEN4 TOU reversion fixed** — register 3049 ("Allow Grid Charge") is now exposed as a select entity. This is the firmware prerequisite gate: TOU writes silently revert when it is Disabled. Enable it once and TOU schedules will persist.
+- **MOD GEN4 — 9 TOU slots** — slots 5–9 (registers 3050–3059) added. The gap at 3046–3049 is EMS controls, not TOU slots.
+- **MOD TOU atomic writes** — start + end now written as a single FC16 transaction, eliminating the partial-update window that could trigger reversion.
+- **SPH GEN3 extended time periods** — Battery First slots 4–6 (registers 1017–1025) and Grid First slots 4–9 (registers 1026–1088) now exposed as time pickers and enable selects.
+- **New control guide** — [`docs/CONTROLS.md`](docs/CONTROLS.md) replaces the WIT-only guide with per-model instructions, SVG diagrams, and automation examples for all hybrid families.
 
 ---
 
