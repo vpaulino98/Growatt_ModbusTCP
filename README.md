@@ -1,7 +1,7 @@
 # Growatt Modbus Integration for Home Assistant ☀️
 
 ![HACS Badge](https://img.shields.io/badge/HACS-Custom-orange.svg)
-![Version](https://img.shields.io/badge/Version-0.6.8b2-blue.svg)
+![Version](https://img.shields.io/badge/Version-0.6.8-blue.svg)
 [![GitHub Issues](https://img.shields.io/github/issues/0xAHA/Growatt_ModbusTCP.svg)](https://github.com/0xAHA/Growatt_ModbusTCP/issues)
 [![GitHub Stars](https://img.shields.io/github/stars/0xAHA/Growatt_ModbusTCP.svg?style=social)](https://github.com/0xAHA/Growatt_ModbusTCP)
 
@@ -295,18 +295,14 @@ The integration pre-configures sensors with the correct `state_class` and `devic
 
 See **[RELEASENOTES.md](RELEASENOTES.md)** for the full changelog.
 
-**v0.6.8b2 highlights:**
+**v0.6.8 highlights:**
 
-- **MOD GEN4 TOU enable/priority no longer reverts** — enable and priority selects now write start+end as an atomic FC16 pair (same as time pickers), fixing the firmware's requirement for both registers in a single transaction. This is why the Solax integration works with the ShineWiFi dongle connected.
-- **Duplicate "Allow Grid Charge" entity fixed** — the correct battery-device-assigned entity is now registered; the generic duplicate is suppressed.
-
-**v0.6.8b1 highlights:**
-
-- **MOD GEN4 TOU reversion fixed** — register 3049 ("Allow Grid Charge") is now exposed as a select entity. This is the firmware prerequisite gate: TOU writes silently revert when it is Disabled. Enable it once and TOU schedules will persist.
-- **MOD GEN4 — 9 TOU slots** — slots 5–9 (registers 3050–3059) added. The gap at 3046–3049 is EMS controls, not TOU slots.
-- **MOD TOU atomic writes** — start + end now written as a single FC16 transaction, eliminating the partial-update window that could trigger reversion.
-- **SPH GEN3 extended time periods** — Battery First slots 4–6 (registers 1017–1025) and Grid First slots 4–9 (registers 1026–1088) now exposed as time pickers and enable selects.
-- **New control guide** — [`docs/CONTROLS.md`](docs/CONTROLS.md) replaces the WIT-only guide with per-model instructions, SVG diagrams, and automation examples for all hybrid families.
+- **MOD GEN4 TOU — full fix:** Register 3049 ("Allow Grid Charge") prerequisite gate exposed; all TOU writes (time, priority, enable) now use atomic FC16 transactions; 9 slots supported; time entities appear correctly in automations.
+- **SPH GEN3 — extended schedules:** Battery First slots 4–6 and Grid First slots 4–9 exposed as time pickers and enable selects. AC Charge periods renamed to avoid confusion with the new slots.
+- **SPH Hybrid — Load First Battery Minimum SOC** — new slider entity (register 608, 10–100 %).
+- **WIT battery current fix** — largest absolute value selected across all available registers, eliminating false small-but-wrong readings from VPP register 31215.
+- **MOD grid power fallback** — falls back to VPP meter registers when 3000-range grid power reads zero.
+- **New control guide** — [`docs/CONTROLS.md`](docs/CONTROLS.md) with per-model instructions for MOD, SPH, WIT, and SPF.
 
 ---
 

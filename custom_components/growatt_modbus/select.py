@@ -239,7 +239,9 @@ class GrowattGenericSelect(CoordinatorEntity, SelectEntity):
                 _LOGGER.info("Set %s to %s (value=%d, verified)", self._control_name, option, value)
             else:
                 _LOGGER.warning(
-                    "%s: write succeeded but value reverted (possible cloud override)",
+                    "%s: write succeeded but value reverted. Possible causes: "
+                    "ShineWiFi/cloud dongle overriding local writes, inverter firmware "
+                    "rejecting the value, or a prerequisite setting not enabled.",
                     self._control_name,
                 )
             self.coordinator.track_write(register_addr, value, self._control_name)
@@ -780,6 +782,10 @@ class GrowattModAllowGridChargeSelect(CoordinatorEntity, SelectEntity):
             if verified:
                 _LOGGER.info("Set allow_grid_charge to %s (value=%d, verified)", option, value)
             else:
-                _LOGGER.warning("allow_grid_charge: write succeeded but value reverted")
+                _LOGGER.warning(
+                    "allow_grid_charge: write succeeded but value reverted. "
+                    "Possible causes: ShineWiFi/cloud dongle overriding local writes, "
+                    "or inverter firmware rejecting the value."
+                )
             self.coordinator.track_write(self._REGISTER, value, self._DATA_FIELD)
             await self.coordinator.async_request_refresh()

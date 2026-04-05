@@ -4,73 +4,64 @@
 
 ---
 
-## vNext
+## v0.6.8
 
-### SPH Hybrid — Load First Battery Minimum SOC control
-
-Added a slider control entity for Growatt SPH hybrid inverters
-(3-6kW, 7-10kW, and their V2.01 variants) that sets the minimum
-battery state-of-charge the inverter will discharge to when
-operating in **Load First** mode.
-
-- **Register:** holding register 608 (undocumented in official
-  Growatt Modbus V1.39 spec; sourced from community research and
-  cross-validated against the homeassistant-solax-modbus
-  plugin_growatt.py implementation)
-- **Range:** 10–100 %
-- **HA entity:** `number.<name>_battery_load_first_battery_minimum_soc`
-- **Device:** Battery device
-- **Icon:** `mdi:battery-sync`
-- **Applies to:** SPH_3000_6000, SPH_7000_10000,
-  SPH_3000_6000_V201, SPH_7000_10000_V201
-
+Issues: #226 · #228 · #234 · #238
 
 ---
 
-## v0.6.8b2
+### Changes at a Glance
 
-Issues: #234
-
-> **Beta release** — MOD GEN4 TOU enable/priority reversion fix + duplicate entity fix.
-> Supersedes v0.6.8b1 for MOD GEN4 users.
+- **MOD GEN4 — TOU reversion root cause fixed:** Register 3049 ("Allow Grid Charge") was
+  missing from the integration. On GEN4 hardware this register is a prerequisite gate —
+  without it enabled, the firmware silently discards TOU writes after each cloud sync cycle.
+  A new **"Allow Grid Charge"** select entity is now exposed under the Battery device.
+- **MOD GEN4 — TOU enable/priority atomic write fix (#234):** `GrowattModTouEnable` and
+  `GrowattModTouPriority` previously wrote only the start register (single-register FC06
+  write). Both selects now write `[start, end]` atomically in one FC16 transaction —
+  matching `GrowattModTouTime` and the Solax Modbus Growatt plugin. This should resolve
+  enable/priority reversion; if it still occurs the ShineWiFi dongle is the likely cause.
+- **MOD GEN4 — Duplicate "Allow Grid Charge" entity fixed (#234):** The entity was being
+  registered twice (generic loop + dedicated class), causing HA to silently discard the
+  correct battery-device-assigned instance. Fixed with a skip guard in the generic loop.
+- **MOD GEN4 — TOU slots 5–9 added:** GEN4 hardware supports 9 time slots
+  (registers 3038–3059, gap at 3046–3049 for EMS controls). Slots 5–9 now fully supported.
+- **MOD GEN4 — TOU time entities now correct in automations (#234):** `GrowattModTouTime`
+  now sets `_attr_has_entity_name = True` (consistent with all other entity classes),
+  ensuring TOU Period Start/End time pickers appear correctly under the Battery device in
+  HA's automation action picker alongside the Enable and Priority selects.
+- **MOD GEN4 — Atomic FC16 writes for TOU time:** Start and end registers written together
+  in one Modbus FC16 transaction, eliminating the partial-update window.
+- **SPH GEN3 — Extended time periods:** Battery First extended slots 4–6 (registers
+  1017–1025) and Grid First extended slots 4–9 (registers 1026–1034 and 1080–1088) now
+  exposed as time picker and enable select entities (#131).
+- **SPH GEN3 — AC Charge period naming fixed (#131):** The three original time period
+  entities (registers 1100–1108) now display as "AC Charge Time Period 1–3" rather than
+  the ambiguous "Time Period 1–3", making it clear they are distinct from the Battery First
+  and Grid First extended slots. Entity IDs are unchanged.
+- **SPH GEN3 — Grid First periods 1–3 intentionally absent (#131):** The SPH GEN3 register
+  map does not expose separate Grid First slots 1–3. The AC Charge periods (1100–1108) are
+  a separate scheduling feature. If Grid First 4+ values revert immediately, check whether
+  the ShineWiFi dongle is connected and overriding local writes.
+- **SPH Hybrid — Load First Battery Minimum SOC control (#238):** New slider entity for SPH
+  3-6kW and 7-10kW (and their V2.01 variants) setting the minimum SOC the inverter will
+  discharge to in Load First mode. Register 608, range 10–100 %, under the Battery device.
+- **MOD — Grid Power fallback for zero 3000-range reads (#228):** When registers 3043/3044
+  (`power_to_grid`) return 0, the coordinator now falls back to VPP meter registers
+  31112/31113 for the correct signed grid power value.
+- **WIT — Battery current largest-absolute-value selection (#226):** The previous cascade
+  accepted the first non-zero reading from VPP register 31215. Some WIT firmware returns a
+  small but incorrect non-zero on 31215 (e.g. −0.1 A when the actual current is +11.3 A).
+  The coordinator now reads all available registers (31215, 8035, 3170) and picks the one
+  with the largest absolute value within a ±300 A sanity bound.
+- **New control guide:** `docs/CONTROLS.md` with per-model instructions, SVG diagrams, and
+  automation examples for MOD, SPH, WIT, and SPF.
 
 ---
 
-### Changes
+### ⚠️ Upgrading from v0.6.6 — Entity ID Changes (#231)
 
-- **MOD GEN4 — TOU enable/priority no longer reverts (#234):** `GrowattModTouEnable` and
-  `GrowattModTouPriority` previously wrote only the start register (FC06 single-register
-  write). The MOD GEN4 firmware requires start and end to be written together in a single
-  FC16 transaction — exactly the same constraint that caused TOU time writes to revert
-  before v0.6.8b1. Both selects now write `[start, end]` atomically via `write_registers`,
-  matching the pattern already used by `GrowattModTouTime` in `time.py` and by the
-  `wills106/homeassistant-solax-modbus` Growatt plugin. This is why the Solax integration
-  works with the ShineWiFi dongle connected without needing to disconnect it.
-
-- **MOD GEN4 — Duplicate "Allow Grid Charge" entity fixed (#234):** The `allow_grid_charge`
-  select was being registered twice — once by the generic `WRITABLE_REGISTERS` loop and
-  once by the dedicated `GrowattModAllowGridChargeSelect` class — producing identical unique
-  IDs. Home Assistant registered the first (generic) entity and silently discarded the
-  second (battery-device-assigned) one, logging
-  `ID …_allow_grid_charge already exists — ignoring select.growatt_modbus_battery_allow_grid_charge`.
-  A skip guard now prevents the generic loop from creating this entity, leaving only the
-  dedicated class. The "Allow Grid Charge" entity now correctly appears under the Battery
-  device.
-
----
-
-## v0.6.8b1
-
-Issues: #228 · #226
-
-> **Beta release** — MOD GEN4 TOU reversion fix + extended schedule support for MOD and SPH.
-> Field-test recommended before deploying to production. See verification steps below.
-
----
-
-### ⚠️ BREAKING CHANGE from v0.6.6 — Entity ID Changes (#231)
-
-> **If you are upgrading from v0.6.6**, all entity IDs changed in v0.6.7. This also affects upgrades from v0.6.6 to v0.6.8b1.
+> **If you are upgrading from v0.6.6**, all entity IDs changed in v0.6.7. This also affects upgrades from v0.6.6 to v0.6.8.
 >
 > v0.6.6 introduced sub-devices (Solar, Grid, Load, Battery) but left the integration prefix in entity names, causing HA to generate IDs with a double prefix — for example `sensor.growatt_modbus_grid_growatt_modbus_energy_to_grid_today`.
 >
@@ -80,162 +71,20 @@ Issues: #228 · #226
 
 ---
 
-### Changes at a Glance
+### MOD GEN4 — TOU setup guide
 
-- **MOD GEN4 — TOU reversion root cause fixed:** Register 3049 ("Allow Grid Charge") was
-  missing from the integration. On GEN4 hardware this register is a prerequisite gate —
-  without it enabled, the firmware silently discards TOU writes after each cloud sync
-  cycle. A new **"Allow Grid Charge"** select entity is now exposed under the Battery device.
-- **MOD GEN4 — TOU slots 5–9 added:** GEN4 hardware supports 9 time slots
-  (registers 3038–3059, with a gap at 3046–3049 for EMS controls). Only slots 1–4 were
-  previously implemented. Slots 5–9 (registers 3050–3059) are now fully supported.
-- **MOD GEN4 — Atomic FC16 writes for TOU:** Start and end registers for each TOU slot
-  are now written together in a single Modbus FC16 transaction, eliminating the window
-  where the inverter could see a partially-updated schedule.
-- **SPH GEN3 — Extended time periods:** Battery First extended slots 4–6 (registers
-  1017–1025) and Grid First extended slots 4–9 (registers 1026–1034 and 1080–1088) are
-  now exposed as time picker and enable select entities.
-- **MOD — Grid Power now correct when 3000-range registers return 0 (#228):** On some MOD firmware, registers 3043/3044 (`power_to_grid`) return 0 while the VPP meter registers 31112/31113 carry the correct signed value. The coordinator now falls back to the VPP meter registers when the 3000-range reads zero.
-- **WIT — Battery current now correct when VPP register 31215 returns 0 (#226):** Some WIT firmware variants do not implement `Ibat` in the VPP register range. The coordinator now cascades through native register 8035, then 3000-range register 3170, before accepting 0 A.
-- **New control guide:** `docs/CONTROLS.md` replaces the WIT-only `WIT_CONTROL_GUIDE.md`
-  with comprehensive per-model instructions, SVG diagrams, and automation examples for
-  MOD, SPH, WIT, and SPF.
+For each TOU period you want active:
 
----
-
-### MOD GEN4 — How to Use the New TOU Control
-
-> **Read this before configuring TOU on a MOD GEN4 inverter.**
-
-#### Why TOU was reverting
-
-Growatt's GEN4 firmware implements a software gate on all TOU register writes.
-Register 3049 ("Allow Grid Charge") must be set to `1 (Enabled)` before the inverter
-will accept and persist TOU schedule changes. When it is `0 (Disabled)`, the firmware
-accepts the Modbus write without error but reapplies its own defaults on the next
-firmware tick — typically within 30–90 seconds.
-
-This gate is documented in the `wills106/homeassistant-solax-modbus` Growatt plugin,
-which successfully manages TOU on the same hardware. Our integration previously had no
-awareness of this register.
-
-#### Step 1 — Enable Allow Grid Charge (one-time)
-
-In Home Assistant, open the **Battery** device for your inverter and locate the new
-**"Allow Grid Charge"** select entity. Set it to **Enabled**.
-
-To verify the write was accepted, check the entity state after the next poll cycle
-(~30 seconds). It should remain "Enabled".
-
-You can also verify using the diagnostic service:
-
-```yaml
-service: growatt_modbus.read_register
-data:
-  register_type: holding
-  register_address: 3049
-  count: 1
-target:
-  device_id: YOUR_DEVICE_ID
-```
-
-The response should be `1`. If it immediately reverts to `0`, the ShineWiFi dongle cloud
-sync may be resetting it — disable cloud sync in the dongle's web UI if your firmware
-supports it.
-
-#### Step 2 — Configure TOU Periods (9 slots)
-
-All 9 TOU slots are now available. For each slot you want active:
-
-1. Set **TOU Period N Start** (time picker entity)
-2. Set **TOU Period N End** (time picker entity)
+1. Enable **Allow Grid Charge** (Battery device, one-time prerequisite for GEN4)
+2. Set **TOU Period N Start** and **TOU Period N End** (time picker entities)
 3. Set **TOU Period N Priority** → `Load Priority`, `Battery Priority`, or `Grid Priority`
 4. Set **TOU Period N Enable** → `Enabled`
 
-Slots 1–4 use registers 3038–3045 (same as before). Slots 5–9 use registers 3050–3059
-(new). Leave unused slots Disabled.
+Slots 1–4 use registers 3038–3045. Slots 5–9 use registers 3050–3059. Registers 3046–3049 are EMS controls — the gap between slot 4 and slot 5 is intentional. If values still revert after enabling Allow Grid Charge, the ShineWiFi dongle cloud sync may be overriding local writes — disable cloud sync in the dongle's web UI or the Growatt app.
 
-> **Note on the register gap:** Registers 3046–3049 are EMS controls, not TOU slots.
-> The jump from slot 4 (ends at 3045) to slot 5 (starts at 3050) is intentional.
+### SPH GEN3 — Extended time period guide
 
-#### Step 3 — Verify persistence
-
-After setting a TOU period, wait 60–90 seconds and re-read the start register to confirm
-the value held. Use debug logging to confirm:
-
-```yaml
-logger:
-  logs:
-    custom_components.growatt_modbus: debug
-```
-
-Look for `[MOD TOU] periods 1-4 start: ...` log lines — if the values match what you
-wrote, TOU is working. If they revert, re-check Step 1 (register 3049).
-
-#### Slots 5–9 register verification
-
-Before relying on slots 5–9, confirm your inverter hardware responds to those registers:
-
-```yaml
-service: growatt_modbus.read_register
-data:
-  register_type: holding
-  register_address: 3050
-  count: 10
-target:
-  device_id: YOUR_DEVICE_ID
-```
-
-If the inverter returns data (not a Modbus exception), slots 5–9 are supported.
-
-#### Atomic writes — what changed internally
-
-Previous versions wrote TOU start and end registers independently (two separate FC06
-writes). This created a brief window where the inverter held a valid start time but a
-stale end time, which could cause TOU reversion on sensitive firmware builds.
-
-Version 0.6.8b1 writes both registers together using a single Modbus FC16
-(write multiple registers) transaction — the same method used by the Solax Modbus
-integration and by our own WIT VPP control path. There is no change to entity behaviour
-or the HA UI — the improvement is internal.
-
----
-
-### SPH GEN3 — Extended Time Periods
-
-SPH GEN3 inverters support up to 9 Battery First time windows and 9 Grid First time
-windows in hardware. Previously only 3 AC charge periods (registers 1100–1108) were
-exposed.
-
-**New entities (all under the Battery device):**
-
-| Entity group | Registers | Slots |
-|---|---|---|
-| Battery First time periods | 1017–1025 | Slots 4–6 |
-| Grid First time periods | 1026–1034 | Slots 4–6 |
-| Grid First time periods | 1080–1088 | Slots 7–9 |
-
-Each slot provides:
-- A **start time** picker entity
-- An **end time** picker entity
-- An **enable** select entity (`Disabled` / `Enabled`)
-
-**How to use:**
-
-Set the global **Priority Mode** (register 1044) to `Battery First` or `Grid First` to
-select which set of time slots is active. Then configure individual windows using the
-time picker entities for the relevant slot group.
-
-> **Hardware validation note:** These registers are documented in the Growatt protocol
-> specification and confirmed present in the Solax Modbus Growatt plugin for
-> `HYBRID | GEN3` models. If your specific SPH model does not respond to these registers
-> (i.e., the entities appear but always read 0 and writes are not accepted), please open
-> an issue with your register scanner CSV.
-
-> **SPH HU note:** SPH 8000–10000 TL-HU uses a different register architecture where
-> battery management holding registers (1044, 1070–1108) return Modbus exceptions.
-> The extended time period registers (1017–1088) have not been validated on HU hardware.
-> HU users should leave these entities unconfigured until hardware confirmation is available.
+Set the global **Priority Mode** (register 1044) to `Battery First` or `Grid First`, then configure individual windows using the time picker and enable entities for each slot group. Grid First slots 1–3 are not exposed separately — the AC Charge Time Period slots (1100–1108) are a distinct feature for scheduling AC charging, not Grid First priority windows.
 
 ---
 

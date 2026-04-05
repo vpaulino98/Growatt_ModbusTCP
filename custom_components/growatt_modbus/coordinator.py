@@ -233,10 +233,10 @@ class GrowattModbusCoordinator(DataUpdateCoordinator[GrowattData]):
         if overridden_controls:
             for control_name, expected, actual, age in overridden_controls:
                 _LOGGER.warning(
-                    "Cloud override detected: '%s' was set to %d but reverted to %d "
-                    "after %.0f seconds. The Growatt cloud (ShineWiFi dongle) is likely "
-                    "overwriting local Modbus writes. To fix: disconnect the ShineWiFi "
-                    "dongle, or disable cloud control in the Growatt app.",
+                    "Write reversion detected: '%s' was set to %d but reverted to %d "
+                    "after %.0f seconds. Possible causes: ShineWiFi/cloud dongle overriding "
+                    "local writes; inverter firmware rejecting the value; or a prerequisite "
+                    "setting not enabled (e.g. Allow Grid Charge for MOD TOU).",
                     control_name, expected, actual, age,
                 )
 
@@ -251,14 +251,19 @@ class GrowattModbusCoordinator(DataUpdateCoordinator[GrowattData]):
                         "persistent_notification",
                         "create",
                         {
-                            "title": "Growatt: Cloud Override Detected",
+                            "title": "Growatt: Write Reversion Detected",
                             "message": (
-                                f"Local Modbus writes to **{affected}** are being overridden by the "
-                                f"Growatt cloud server via the ShineWiFi dongle.\n\n"
-                                f"**To resolve:** Disconnect the ShineWiFi dongle from the inverter, "
-                                f"or disable remote control in the ShinePhone/Growatt app.\n\n"
-                                f"While the dongle is connected and cloud control is active, "
-                                f"local settings changes will be reverted within ~10 seconds."
+                                f"Local Modbus writes to **{affected}** were reverted shortly after being set.\n\n"
+                                f"**Common causes:**\n"
+                                f"- **ShineWiFi / ShineLink dongle** connected: the Growatt cloud server "
+                                f"may be restoring its own settings. Disconnect the dongle or disable "
+                                f"remote control in the ShinePhone/Growatt app.\n"
+                                f"- **Inverter firmware rejecting the value**: check that any prerequisite "
+                                f"settings are enabled (e.g. *Allow Grid Charge* must be Enabled before "
+                                f"MOD TOU schedules will persist).\n"
+                                f"- **Register read-only on this firmware**: the register may not be "
+                                f"writable on your specific model or firmware version — check the logs "
+                                f"for details and open an issue if the register should be writable."
                             ),
                             "notification_id": "growatt_cloud_override",
                         },
