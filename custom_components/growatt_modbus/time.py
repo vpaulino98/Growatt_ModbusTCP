@@ -81,7 +81,7 @@ class GrowattGenericTime(CoordinatorEntity, TimeEntity):
         self._control_name = control_name
         self._control_config = control_config
 
-        friendly_name = control_name.replace('_', ' ').title()
+        friendly_name = control_config.get('label') or control_name.replace('_', ' ').title()
         self._attr_name = friendly_name
         self._attr_unique_id = f"{config_entry.entry_id}_{control_name}"
 
@@ -129,7 +129,9 @@ class GrowattGenericTime(CoordinatorEntity, TimeEntity):
                 )
             else:
                 _LOGGER.warning(
-                    "%s: write succeeded but value reverted (possible cloud override)",
+                    "%s: write succeeded but value reverted. Possible causes: "
+                    "ShineWiFi/cloud dongle overriding local writes, inverter firmware "
+                    "rejecting the value, or a prerequisite setting not enabled.",
                     self._control_name,
                 )
             self.coordinator.track_write(register, raw_value, self._control_name)
@@ -146,6 +148,7 @@ class GrowattModTouTime(CoordinatorEntity, TimeEntity):
     Writing to an end register does a plain hex-packed write.
     """
 
+    _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.CONFIG
     _attr_icon = "mdi:clock-outline"
 
@@ -166,14 +169,12 @@ class GrowattModTouTime(CoordinatorEntity, TimeEntity):
         if is_start:
             self._register = period_def["start_reg"]
             self._data_field = period_def["start_field"]
-            label = f"TOU Period {self._period} Start"
+            self._attr_name = f"TOU Period {self._period} Start"
         else:
             self._register = period_def["end_reg"]
             self._data_field = period_def["end_field"]
-            label = f"TOU Period {self._period} End"
+            self._attr_name = f"TOU Period {self._period} End"
 
-        entry_name = config_entry.data.get("name", config_entry.title)
-        self._attr_name = f"{entry_name} {label}"
         self._attr_unique_id = f"{config_entry.entry_id}_mod_tou_{self._period}_{'start' if is_start else 'end'}"
 
     @property

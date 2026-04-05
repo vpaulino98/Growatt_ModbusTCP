@@ -395,20 +395,24 @@ WRITABLE_REGISTERS = {
         'desc': 'System enable control (SPH HU models)'
     },
 
-    # Time Period Controls (hex-packed: hours*256 + minutes, e.g. 06:00 = 0x0600 = 1536)
+    # AC Charge Time Period Controls (hex-packed: hours*256 + minutes, e.g. 06:00 = 0x0600 = 1536)
+    # These are SPH AC-charge scheduling slots (registers 1100-1108), distinct from
+    # the Battery First / Grid First extended slots at 1017-1088.
     'time_period_1_start': {
         'register': 1100,
         'scale': 1,
         'valid_range': (0, 5947),
         'unit': '',
-        'desc': 'Period 1 start time (hex-packed: hours*256+minutes, e.g. 06:00 = 0x0600 = 1536)'
+        'label': 'AC Charge Time Period 1 Start',
+        'desc': 'AC charge period 1 start time (hex-packed: hours*256+minutes, e.g. 06:00 = 0x0600 = 1536)'
     },
     'time_period_1_end': {
         'register': 1101,
         'scale': 1,
         'valid_range': (0, 5947),
         'unit': '',
-        'desc': 'Period 1 end time (hex-packed: hours*256+minutes, e.g. 22:00 = 0x1600 = 5632)'
+        'label': 'AC Charge Time Period 1 End',
+        'desc': 'AC charge period 1 end time (hex-packed: hours*256+minutes, e.g. 22:00 = 0x1600 = 5632)'
     },
     'time_period_1_enable': {
         'register': 1102,
@@ -418,21 +422,24 @@ WRITABLE_REGISTERS = {
             0: 'Disabled',
             1: 'Enabled'
         },
-        'desc': 'Enable time period 1'
+        'label': 'AC Charge Time Period 1 Enable',
+        'desc': 'Enable AC charge time period 1'
     },
     'time_period_2_start': {
         'register': 1103,
         'scale': 1,
         'valid_range': (0, 5947),
         'unit': '',
-        'desc': 'Period 2 start time (hex-packed: hours*256+minutes)'
+        'label': 'AC Charge Time Period 2 Start',
+        'desc': 'AC charge period 2 start time (hex-packed: hours*256+minutes)'
     },
     'time_period_2_end': {
         'register': 1104,
         'scale': 1,
         'valid_range': (0, 5947),
         'unit': '',
-        'desc': 'Period 2 end time (hex-packed: hours*256+minutes)'
+        'label': 'AC Charge Time Period 2 End',
+        'desc': 'AC charge period 2 end time (hex-packed: hours*256+minutes)'
     },
     'time_period_2_enable': {
         'register': 1105,
@@ -442,21 +449,24 @@ WRITABLE_REGISTERS = {
             0: 'Disabled',
             1: 'Enabled'
         },
-        'desc': 'Enable time period 2'
+        'label': 'AC Charge Time Period 2 Enable',
+        'desc': 'Enable AC charge time period 2'
     },
     'time_period_3_start': {
         'register': 1106,
         'scale': 1,
         'valid_range': (0, 5947),
         'unit': '',
-        'desc': 'Period 3 start time (hex-packed: hours*256+minutes)'
+        'label': 'AC Charge Time Period 3 Start',
+        'desc': 'AC charge period 3 start time (hex-packed: hours*256+minutes)'
     },
     'time_period_3_end': {
         'register': 1107,
         'scale': 1,
         'valid_range': (0, 5947),
         'unit': '',
-        'desc': 'Period 3 end time (hex-packed: hours*256+minutes)'
+        'label': 'AC Charge Time Period 3 End',
+        'desc': 'AC charge period 3 end time (hex-packed: hours*256+minutes)'
     },
     'time_period_3_enable': {
         'register': 1108,

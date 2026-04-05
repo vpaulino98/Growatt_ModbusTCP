@@ -1538,13 +1538,14 @@ class GrowattModbus:
         """Write a holding register with read-back verification and retry.
 
         After each write, reads the register back to confirm the value stuck.
-        If the read-back differs (e.g. cloud override via ShineWiFi dongle),
-        retries up to WRITE_VERIFY_MAX_RETRIES times.
+        If the read-back differs, retries up to WRITE_VERIFY_MAX_RETRIES times.
+        Reversion can be caused by a ShineWiFi/cloud override, inverter firmware
+        rejecting the value, or another controller on the bus.
 
         Returns:
             tuple of (write_success: bool, value_verified: bool):
             - (True, True)   — write succeeded and read-back confirmed
-            - (True, False)  — write succeeded but read-back differs (cloud override)
+            - (True, False)  — write succeeded but read-back differs (value reverted)
             - (False, False) — write itself failed (Modbus error)
         """
         for attempt in range(WRITE_VERIFY_MAX_RETRIES):
@@ -1584,7 +1585,8 @@ class GrowattModbus:
             # Mismatch — value didn't stick
             logger.warning(
                 "[WRITE VERIFY] Register %d: wrote %d but read back %d (attempt %d/%d). "
-                "Possible cloud override via ShineWiFi dongle.",
+                "Value reverted — possible causes: ShineWiFi/cloud override, inverter firmware "
+                "rejecting the value, or a prerequisite register not set.",
                 register, value, read_back[0], attempt + 1, WRITE_VERIFY_MAX_RETRIES,
             )
 
@@ -1593,9 +1595,12 @@ class GrowattModbus:
 
         # All retries exhausted — value keeps reverting
         logger.error(
-            "[WRITE VERIFY] Register %d: value %d was overridden %d times. "
-            "The Growatt cloud (ShineWiFi dongle) is likely overwriting local Modbus writes. "
-            "To fix: disconnect the ShineWiFi dongle or disable cloud control in the Growatt app.",
+            "[WRITE VERIFY] Register %d: value %d reverted %d time(s) after writing. "
+            "Possible causes: (1) ShineWiFi/cloud dongle overriding local writes — "
+            "disconnect it or disable remote control in the Growatt app; "
+            "(2) inverter firmware rejecting the value — check prerequisite settings "
+            "(e.g. Allow Grid Charge for MOD TOU); "
+            "(3) the register is read-only or unsupported on this firmware.",
             register, value, WRITE_VERIFY_MAX_RETRIES,
         )
         return (True, False)
@@ -1994,34 +1999,36 @@ class GrowattModbus:
                 data.battery_voltage = 0.0
 
             # Battery current (signed: positive=discharge, negative=charge)
-            # Cascade: VPP (31215) → native 8035 → 3k-range 3170
-            # Some WIT firmware variants return 0 on VPP register 31215 while 8035/3170 are correct.
-            addr = self._find_register_by_name_with_fallback('battery_current_low')
-            if not addr:
-                addr = self._find_register_by_name_with_fallback('battery_current')
-            if not addr:
-                addr = self._find_register_by_name('battery_current_legacy')
+            # Issue #226: some WIT firmware returns a small wrong non-zero on VPP reg 31215
+            # while the native reg 8035 carries the correct value.  Rather than a zero-only
+            # fallback, read all available registers and pick the one with the largest
+            # absolute value (bounded to a plausible ±300 A range).
+            _CURRENT_LOOKUP_NAMES = (
+                'battery_current_low',   # 32-bit paired VPP (e.g. WIT 31215 via maps_to)
+                'battery_current',       # native 8000-range (e.g. WIT 8035)
+                'battery_current_legacy',
+                'battery_current_3k',    # 3k-range fallback (e.g. WIT 3170)
+            )
+            _CURRENT_MAX_A = 300.0  # sanity ceiling — discard clearly out-of-range readings
 
-            if addr:
-                value = self._get_register_value(addr)
-                # VPP returned 0 — try native 8000-range register before accepting zero
-                if (value is None or value == 0.0) and addr >= 31000:
-                    native_addr = self._find_register_by_name('battery_current')  # 8035 (name match only, not maps_to)
-                    if native_addr and native_addr != addr:
-                        native_val = self._get_register_value(native_addr)
-                        if native_val is not None and native_val != 0.0:
-                            value = native_val
-                            logger.debug(f"VPP battery_current=0, using native reg {native_addr}: {value}A")
-                # Still 0 — try 3k-range fallback (register 3170 on WIT if profile includes it)
-                if value is None or value == 0.0:
-                    fallback_addr = self._find_register_by_name('battery_current_3k')
-                    if fallback_addr:
-                        fallback_val = self._get_register_value(fallback_addr)
-                        if fallback_val is not None and fallback_val != 0.0:
-                            value = fallback_val
-                            logger.debug(f"Using 3k battery_current from reg {fallback_addr}: {value}A")
-                data.battery_current = value if value is not None else 0.0
-                logger.debug(f"Battery current: {data.battery_current}A (primary reg {addr})")
+            seen_current_addrs: set = set()
+            current_candidates: list = []
+            for _cname in _CURRENT_LOOKUP_NAMES:
+                _a = (self._find_register_by_name_with_fallback(_cname) or
+                      self._find_register_by_name(_cname))
+                if _a and _a not in seen_current_addrs:
+                    seen_current_addrs.add(_a)
+                    _v = self._get_register_value(_a)
+                    if _v is not None and abs(_v) <= _CURRENT_MAX_A:
+                        current_candidates.append((_a, _v))
+                        logger.debug(f"Battery current candidate reg {_a} ({_cname}): {_v}A")
+
+            if current_candidates:
+                _best_addr, _best_val = max(current_candidates, key=lambda c: abs(c[1]))
+                data.battery_current = _best_val
+                logger.debug(f"Battery current: {_best_val}A (selected from {len(current_candidates)} candidate(s), reg {_best_addr})")
+            else:
+                data.battery_current = 0.0
 
             # Battery SOC (use smart fallback if multiple ranges available)
             value = self._get_register_value_with_fallback('battery_soc')
