@@ -1,7 +1,7 @@
 # Growatt Modbus Integration for Home Assistant ☀️
 
 ![HACS Badge](https://img.shields.io/badge/HACS-Custom-orange.svg)
-![Version](https://img.shields.io/badge/Version-0.6.8b1-blue.svg)
+![Version](https://img.shields.io/badge/Version-0.6.8b2-blue.svg)
 [![GitHub Issues](https://img.shields.io/github/issues/0xAHA/Growatt_ModbusTCP.svg)](https://github.com/0xAHA/Growatt_ModbusTCP/issues)
 [![GitHub Stars](https://img.shields.io/github/stars/0xAHA/Growatt_ModbusTCP.svg?style=social)](https://github.com/0xAHA/Growatt_ModbusTCP)
 
@@ -294,6 +294,11 @@ The integration pre-configures sensors with the correct `state_class` and `devic
 ## What's New
 
 See **[RELEASENOTES.md](RELEASENOTES.md)** for the full changelog.
+
+**v0.6.8b2 highlights:**
+
+- **MOD GEN4 TOU enable/priority no longer reverts** — enable and priority selects now write start+end as an atomic FC16 pair (same as time pickers), fixing the firmware's requirement for both registers in a single transaction. This is why the Solax integration works with the ShineWiFi dongle connected.
+- **Duplicate "Allow Grid Charge" entity fixed** — the correct battery-device-assigned entity is now registered; the generic duplicate is suppressed.
 
 **v0.6.8b1 highlights:**
 
