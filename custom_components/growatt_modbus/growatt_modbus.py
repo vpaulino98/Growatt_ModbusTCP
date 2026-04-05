@@ -244,6 +244,7 @@ class GrowattData:
 
     # SPH/SPM Battery Control registers (1000+ range)
     priority_mode: int = 0            # 0=Load First, 1=Battery First, 2=Grid First
+    load_first_battery_minimum_soc: int = 10  # 10-100 (min SOC % in Load First mode, register 608)
     discharge_power_rate: int = 0     # 0-100 (battery discharge power %)
     discharge_stopped_soc: int = 0    # 0-100 (stop discharge at SOC %)
     charge_power_rate: int = 0        # 0-100 (battery charge power %)

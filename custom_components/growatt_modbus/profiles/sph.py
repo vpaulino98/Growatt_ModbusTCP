@@ -71,6 +71,14 @@ SPH_3000_6000 = {
         0: {'name': 'on_off', 'scale': 1, 'unit': '', 'access': 'RW', 'desc': '0=Off, 1=On'},
         3: {'name': 'active_power_rate', 'scale': 1, 'unit': '%', 'access': 'RW'},
 
+        # Load First Battery Minimum SOC
+        # Not in official Growatt Modbus protocol documentation.
+        # Source: https://www.photovoltaikforum.com/thread/192228-growatt-sph-modbus-rtu-rj45-pinout-und-register-beschreibung/?postID=3017838#post3017838
+        # Also confirmed by homeassistant-solax-modbus plugin_growatt.py (register 608, GEN3/SPH).
+        608: {'name': 'load_first_battery_minimum_soc', 'scale': 1, 'unit': '%', 'access': 'RW',
+              'valid_range': (10, 100),
+              'desc': 'Minimum battery SOC in Load First mode — inverter stops discharging below this level (10-100%)'},
+
         # Battery Management Control (1000+ range)
         1044: {'name': 'priority_mode', 'scale': 1, 'unit': '', 'access': 'RW',
                'desc': 'Priority mode selection',
@@ -249,6 +257,14 @@ SPH_7000_10000 = {
         # Basic Control
         0: {'name': 'on_off', 'scale': 1, 'unit': '', 'access': 'RW', 'desc': '0=Off, 1=On'},
         3: {'name': 'active_power_rate', 'scale': 1, 'unit': '%', 'access': 'RW'},
+
+        # Load First Battery Minimum SOC
+        # Not in official Growatt Modbus protocol documentation.
+        # Source: https://www.photovoltaikforum.com/thread/192228-growatt-sph-modbus-rtu-rj45-pinout-und-register-beschreibung/?postID=3017838#post3017838
+        # Also confirmed by homeassistant-solax-modbus plugin_growatt.py (register 608, GEN3/SPH).
+        608: {'name': 'load_first_battery_minimum_soc', 'scale': 1, 'unit': '%', 'access': 'RW',
+              'valid_range': (10, 100),
+              'desc': 'Minimum battery SOC in Load First mode — inverter stops discharging below this level (10-100%)'},
 
         # Battery Management Control (1000+ range)
         1044: {'name': 'priority_mode', 'scale': 1, 'unit': '', 'access': 'RW',
