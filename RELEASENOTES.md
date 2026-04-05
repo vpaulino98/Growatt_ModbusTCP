@@ -4,6 +4,38 @@
 
 ---
 
+## v0.6.8b2
+
+Issues: #234
+
+> **Beta release** — MOD GEN4 TOU enable/priority reversion fix + duplicate entity fix.
+> Supersedes v0.6.8b1 for MOD GEN4 users.
+
+---
+
+### Changes
+
+- **MOD GEN4 — TOU enable/priority no longer reverts (#234):** `GrowattModTouEnable` and
+  `GrowattModTouPriority` previously wrote only the start register (FC06 single-register
+  write). The MOD GEN4 firmware requires start and end to be written together in a single
+  FC16 transaction — exactly the same constraint that caused TOU time writes to revert
+  before v0.6.8b1. Both selects now write `[start, end]` atomically via `write_registers`,
+  matching the pattern already used by `GrowattModTouTime` in `time.py` and by the
+  `wills106/homeassistant-solax-modbus` Growatt plugin. This is why the Solax integration
+  works with the ShineWiFi dongle connected without needing to disconnect it.
+
+- **MOD GEN4 — Duplicate "Allow Grid Charge" entity fixed (#234):** The `allow_grid_charge`
+  select was being registered twice — once by the generic `WRITABLE_REGISTERS` loop and
+  once by the dedicated `GrowattModAllowGridChargeSelect` class — producing identical unique
+  IDs. Home Assistant registered the first (generic) entity and silently discarded the
+  second (battery-device-assigned) one, logging
+  `ID …_allow_grid_charge already exists — ignoring select.growatt_modbus_battery_allow_grid_charge`.
+  A skip guard now prevents the generic loop from creating this entity, leaving only the
+  dedicated class. The "Allow Grid Charge" entity now correctly appears under the Battery
+  device.
+
+---
+
 ## v0.6.8b1
 
 Issues: #228 · #226

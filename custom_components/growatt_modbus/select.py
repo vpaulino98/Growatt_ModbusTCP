@@ -86,6 +86,10 @@ async def async_setup_entry(
         if register_num not in holding_registers:
             continue  # Skip if register not in this profile
 
+        # allow_grid_charge is handled by GrowattModAllowGridChargeSelect below
+        if control_name == 'allow_grid_charge':
+            continue
+
         # VPP export limit requires live confirmation that the inverter responds to 30200
         if control_name == 'vpp_export_limit_enable':
             if coordinator.data is None or not coordinator.data.vpp_export_limit_available:
@@ -615,7 +619,9 @@ class GrowattModTouPriority(CoordinatorEntity, SelectEntity):
         self._config_entry = config_entry
         self._period = period_def["period"]
         self._start_reg = period_def["start_reg"]
+        self._end_reg = period_def["end_reg"]
         self._start_field = period_def["start_field"]
+        self._end_field = period_def["end_field"]
 
         entry_name = config_entry.data.get("name", config_entry.title)
         self._attr_name = f"{entry_name} TOU Period {self._period} Priority"
@@ -637,26 +643,27 @@ class GrowattModTouPriority(CoordinatorEntity, SelectEntity):
         return self._PRIORITY_MAP.get(priority)
 
     async def async_select_option(self, option: str) -> None:
-        """Write new priority, preserving time and enable bits."""
+        """Write new priority atomically — always write start+end together as a single FC16 transaction."""
         priority = self._PRIORITY_REVERSE.get(option)
         if priority is None:
             return
         data = self.coordinator.data
         current_raw = getattr(data, self._start_field, 0) if data else 0
         new_raw = (int(current_raw) & 0x9FFF) | (priority << 13)
+        current_end = int(getattr(data, self._end_field, 0) if data else 0)
         try:
-            write_ok, verified = await self.hass.async_add_executor_job(
-                self.coordinator.modbus_client.write_register_verified, self._start_reg, new_raw,
+            success = await self.hass.async_add_executor_job(
+                self.coordinator.modbus_client.write_registers,
+                self._start_reg,
+                [new_raw, current_end],
             )
         except ModbusWriteError:
-            _LOGGER.error("Failed to write MOD TOU period %d priority (register %d)", self._period, self._start_reg)
+            _LOGGER.error("Failed to write MOD TOU period %d priority (register %d, atomic FC16)", self._period, self._start_reg)
             return
-        if write_ok:
-            if verified:
-                _LOGGER.info("Set MOD TOU period %d priority to %s (raw=0x%04X, verified)", self._period, option, new_raw)
-            else:
-                _LOGGER.warning("MOD TOU period %d priority: write succeeded but value reverted (possible cloud override)", self._period)
+        if success:
+            _LOGGER.info("Set MOD TOU period %d priority to %s (start=0x%04X, end=0x%04X, atomic FC16)", self._period, option, new_raw, current_end)
             self.coordinator.track_write(self._start_reg, new_raw, self._start_field)
+            self.coordinator.track_write(self._end_reg, current_end, self._end_field)
             await self.coordinator.async_request_refresh()
 
 
@@ -677,7 +684,9 @@ class GrowattModTouEnable(CoordinatorEntity, SelectEntity):
         self._config_entry = config_entry
         self._period = period_def["period"]
         self._start_reg = period_def["start_reg"]
+        self._end_reg = period_def["end_reg"]
         self._start_field = period_def["start_field"]
+        self._end_field = period_def["end_field"]
 
         entry_name = config_entry.data.get("name", config_entry.title)
         self._attr_name = f"{entry_name} TOU Period {self._period} Enable"
@@ -699,24 +708,25 @@ class GrowattModTouEnable(CoordinatorEntity, SelectEntity):
         return "Enabled" if enabled else "Disabled"
 
     async def async_select_option(self, option: str) -> None:
-        """Write new enable state, preserving time and priority bits."""
+        """Write new enable state atomically — always write start+end together as a single FC16 transaction."""
         enable = 1 if option == "Enabled" else 0
         data = self.coordinator.data
         current_raw = getattr(data, self._start_field, 0) if data else 0
         new_raw = (int(current_raw) & 0x7FFF) | (enable << 15)
+        current_end = int(getattr(data, self._end_field, 0) if data else 0)
         try:
-            write_ok, verified = await self.hass.async_add_executor_job(
-                self.coordinator.modbus_client.write_register_verified, self._start_reg, new_raw,
+            success = await self.hass.async_add_executor_job(
+                self.coordinator.modbus_client.write_registers,
+                self._start_reg,
+                [new_raw, current_end],
             )
         except ModbusWriteError:
-            _LOGGER.error("Failed to write MOD TOU period %d enable (register %d)", self._period, self._start_reg)
+            _LOGGER.error("Failed to write MOD TOU period %d enable (register %d, atomic FC16)", self._period, self._start_reg)
             return
-        if write_ok:
-            if verified:
-                _LOGGER.info("Set MOD TOU period %d enable to %s (raw=0x%04X, verified)", self._period, option, new_raw)
-            else:
-                _LOGGER.warning("MOD TOU period %d enable: write succeeded but value reverted (possible cloud override)", self._period)
+        if success:
+            _LOGGER.info("Set MOD TOU period %d enable to %s (start=0x%04X, end=0x%04X, atomic FC16)", self._period, option, new_raw, current_end)
             self.coordinator.track_write(self._start_reg, new_raw, self._start_field)
+            self.coordinator.track_write(self._end_reg, current_end, self._end_field)
             await self.coordinator.async_request_refresh()
 
 
