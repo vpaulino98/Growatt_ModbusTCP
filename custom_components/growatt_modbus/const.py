@@ -350,6 +350,16 @@ WRITABLE_REGISTERS = {
         'unit': '%',
         'desc': 'SOC level to stop battery discharge'
     },
+    # Not in official Growatt Modbus protocol documentation.
+    # Source: https://www.photovoltaikforum.com/thread/192228-growatt-sph-modbus-rtu-rj45-pinout-und-register-beschreibung/?postID=3017838#post3017838
+    # Also used by the homeassistant-solax-modbus plugin_growatt.py (register 608, GEN3/SPH).
+    'load_first_battery_minimum_soc': {
+        'register': 608,
+        'scale': 1,
+        'valid_range': (10, 100),
+        'unit': '%',
+        'desc': 'Minimum battery SOC in Load First mode — inverter stops discharging below this level'
+    },
     'charge_power_rate': {
         'register': 1090,
         'scale': 1,

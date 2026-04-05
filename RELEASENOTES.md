@@ -4,6 +4,29 @@
 
 ---
 
+## vNext
+
+### SPH Hybrid — Load First Battery Minimum SOC control
+
+Added a slider control entity for Growatt SPH hybrid inverters
+(3-6kW, 7-10kW, and their V2.01 variants) that sets the minimum
+battery state-of-charge the inverter will discharge to when
+operating in **Load First** mode.
+
+- **Register:** holding register 608 (undocumented in official
+  Growatt Modbus V1.39 spec; sourced from community research and
+  cross-validated against the homeassistant-solax-modbus
+  plugin_growatt.py implementation)
+- **Range:** 10–100 %
+- **HA entity:** `number.<name>_battery_load_first_battery_minimum_soc`
+- **Device:** Battery device
+- **Icon:** `mdi:battery-sync`
+- **Applies to:** SPH_3000_6000, SPH_7000_10000,
+  SPH_3000_6000_V201, SPH_7000_10000_V201
+
+
+---
+
 ## v0.6.8b2
 
 Issues: #234
