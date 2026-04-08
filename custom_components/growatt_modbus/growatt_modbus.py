@@ -2446,6 +2446,17 @@ class GrowattModbus:
             except Exception as e:
                 logger.debug(f"Could not read priority_mode register {priority_addr}: {e}")
 
+        # Load First Battery Minimum SOC (register 608 — undocumented, SPH hybrid only)
+        if 608 in holding_map:
+            try:
+                load_first_regs = self.read_holding_registers(608, 1)
+                if load_first_regs is not None and len(load_first_regs) >= 1:
+                    data.load_first_battery_minimum_soc = int(load_first_regs[0])
+                    logger.debug("[SPH CTRL] load_first_battery_minimum_soc=%s%%",
+                                 data.load_first_battery_minimum_soc)
+            except Exception as e:
+                logger.debug(f"Could not read load_first_battery_minimum_soc register 608: {e}")
+
         # Discharge Control (1070-1071)
         if any(reg in holding_map for reg in [1070, 1071]):
             try:

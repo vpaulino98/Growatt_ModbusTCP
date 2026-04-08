@@ -4,6 +4,11 @@
 
 ---
 
+- **SPH Hybrid — Load First Battery Minimum SOC control - bugfix:**
+  Fixing bug with reading and showing new Load First SOC value.
+
+---
+
 ## v0.6.8
 
 Issues: #226 · #228 · #234 · #238
