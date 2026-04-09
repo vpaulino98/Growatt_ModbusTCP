@@ -440,6 +440,9 @@ def detect_profile_from_dtc(dtc_code: int) -> Optional[str]:
         3402: 'spf_3000_6000_es_plus',         # SPF 3000-6000 ES PLUS variant
         3403: 'spf_3000_6000_es_plus',         # SPF 3000-6000 ES PLUS variant
 
+        # SPE series - Single-phase hybrid (SPF protocol variant, 8-12kW)
+        64541: 'spe_8000_12000_es',            # SPE 8000-12000 ES (confirmed from issue #212 register scan)
+
         # MIN/TL-XH/MIC series - Official Growatt DTCs
         5100: 'tl_xh_3000_10000_v201',    # MIN 2500-6000TL-XH/XH(P) - covers TL-XH
         5200: 'min_3000_6000_tl_x_v201',  # MIC/MIN 2500-6000TL-X/X2 - refined by testing registers 59-62 (per-MPPT energy)

@@ -1,7 +1,7 @@
 # Growatt Modbus Integration for Home Assistant ☀️
 
 ![HACS Badge](https://img.shields.io/badge/HACS-Custom-orange.svg)
-![Version](https://img.shields.io/badge/Version-0.6.8-blue.svg)
+![Version](https://img.shields.io/badge/Version-0.6.9-blue.svg)
 [![GitHub Issues](https://img.shields.io/github/issues/0xAHA/Growatt_ModbusTCP.svg)](https://github.com/0xAHA/Growatt_ModbusTCP/issues)
 [![GitHub Stars](https://img.shields.io/github/stars/0xAHA/Growatt_ModbusTCP.svg?style=social)](https://github.com/0xAHA/Growatt_ModbusTCP)
 
@@ -294,6 +294,13 @@ The integration pre-configures sensors with the correct `state_class` and `devic
 ## What's New
 
 See **[RELEASENOTES.md](RELEASENOTES.md)** for the full changelog.
+
+**v0.6.9 highlights:**
+
+- **SPF — Battery Power always zero fixed (#174):** `_validate_spf_battery_power_sign` referenced a non-existent attribute (`data.inverter_status` instead of `data.status`), silently suppressing battery power on every poll.
+- **MID — Grid and load energy sensors added (#240):** Power flow (import/export/load) and daily/total energy counters were missing from the profile despite the hardware responding at registers 3041–3078. `grid_energy_today` now reads directly from hardware instead of a broken calculation.
+- **MID V2.01 — Battery support added (#240):** Full battery sensor set (voltage, SOC, current, temperature, SOH, power, charge/discharge energy) added via VPP 31200+ registers, confirmed live in register scan.
+- **SPH / TL-XH — Accurate lifetime PV generation (#243):** Registers 91/92 (`Epv_total H/L`) added to SPH and TL-XH profiles. This is the raw DC-side cumulative generation shown in ShinePhone as "Total Power Generation" — more reliable for the HA energy dashboard than the previously used net-calculated `energy_total`.
 
 **v0.6.8 highlights:**
 

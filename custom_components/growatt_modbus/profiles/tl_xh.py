@@ -58,6 +58,12 @@ TL_XH_3000_10000 = {
         55: {'name': 'energy_total_high', 'scale': 1, 'unit': '', 'pair': 56},
         56: {'name': 'energy_total_low', 'scale': 1, 'unit': '', 'pair': 55, 'combined_scale': 0.1, 'combined_unit': 'kWh'},
         57: {'name': 'time_total_high', 'scale': 1, 'unit': '', 'pair': 58},
+
+        # PV energy total — raw DC-side generation, unaffected by battery cycling (#243)
+        # Protocol V1.39 regs 91-92: Epv_total H/L (0.1 kWh)
+        # Use this for HA energy dashboard; energy_total (reg 55/56) is a net calculated value
+        91: {'name': 'pv_energy_total_high', 'scale': 1, 'unit': '', 'pair': 92, 'desc': 'PV energy total lifetime HIGH'},
+        92: {'name': 'pv_energy_total_low', 'scale': 1, 'unit': '', 'pair': 91, 'combined_scale': 0.1, 'combined_unit': 'kWh', 'desc': 'PV energy total lifetime LOW'},
         58: {'name': 'time_total_low', 'scale': 1, 'unit': '', 'pair': 57, 'combined_scale': 0.5, 'combined_unit': 'h'},
 
         # Backup Output

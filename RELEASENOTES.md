@@ -4,6 +4,74 @@
 
 ---
 
+## v0.6.9
+
+Issues: #174 · #131 · #240 · #243
+
+---
+
+### Fixes
+
+- **SPF — Battery Power always zero fixed (#174):** The `_validate_spf_battery_power_sign`
+  function (introduced to correct intermittent sign errors during PV charging) referenced
+  `data.inverter_status`, which does not exist as a `GrowattData` field. The correct field is
+  `data.status`. The resulting `AttributeError` was silently caught by the battery data
+  exception handler, preventing `charge_power` and `discharge_power` from ever being assigned
+  — leaving `battery_power` permanently at 0W regardless of actual activity.
+
+### MID Series — New Sensors (#240)
+
+The MID profile was missing a large block of registers that the hardware has responded to all
+along. The following sensors are now available on MID (both legacy and V2.01 variants):
+
+- **Grid power flow:** `power_to_grid`, `power_to_user`, `power_to_load` (registers 3041–3046)
+- **Grid energy counters:** `energy_to_grid_today`, `energy_to_grid_total`,
+  `energy_to_user_today`, `energy_to_user_total` (registers 3067–3074)
+- **Load energy counters:** `load_energy_today`, `load_energy_total` (registers 3075–3078)
+- **VPP load power fallback:** register 31118/31119 added to V2.01 profile
+
+As a result `grid_energy_today` now reads directly from hardware (registers 3071/3072) rather
+than being estimated from a calculation that collapsed to zero when load energy was unavailable.
+
+The V2.01 profile additionally gains full battery support via the 31200+ VPP range (confirmed
+responding in issue #240 scan):
+
+- **Battery voltage** (31214, 404.8V confirmed), **Battery SOC** (31217), **Battery current**
+  (31215/31216), **Battery temperature** (31222/31223), **Battery SOH** (31218),
+  **Battery power** (31200/31201), **charge/discharge energy** (31202–31209)
+
+`has_battery` is now `True` for `mid_15000_25000tl3_x_v201`.
+
+### PV Energy Total — Accurate Lifetime Generation (#243)
+
+Registers 91/92 (`Epv_total H/L` per Growatt V1.39 protocol) contain the raw DC-side
+cumulative generation from the PV array. This is the value shown as "Total Power Generation"
+in ShinePhone and is the correct source for the HA energy dashboard.
+
+The previously used `energy_total` (registers 55/56) is a net calculated value that can drift
+with battery cycling, making it unreliable as a long-term energy counter.
+
+Registers 91/92 (`pv_energy_total`) have been added to the **SPH** and **TL-XH** profiles.
+The coordinator already preferred `pv_energy_total` over `energy_total` when the former was
+non-zero — these profiles now populate that field from hardware rather than leaving it at 0.
+
+- **SPH** (all variants): registers 91/92 added
+- **TL-XH** (all variants): registers 91/92 added
+- **MOD, WIT, SPH-TL3:** already had 91/92 in prior releases
+- **MIC, SPF:** registers 91/92 serve different purposes on these models and are unchanged
+
+### SPH — Export Limit Registers Added (#131)
+
+Holding registers 122 (`export_limit_mode`) and 123 (`export_limit_power`) were missing from
+both SPH 3-6kW and 7-10kW profiles despite being documented in the official Growatt Modbus
+protocol (register 122 = RS485 export limit mode, register 123 = limit percentage × 0.1).
+
+These are now defined in both base profiles and inherited by all V2.01 variants. This does not
+resolve the RA1.0 firmware register aliasing reported in #131 — that is a separate issue
+affecting the 1017-1088 holding range only.
+
+---
+
 ## v0.6.8
 
 Issues: #226 · #228 · #234 · #238
@@ -92,24 +160,26 @@ Set the global **Priority Mode** (register 1044) to `Battery First` or `Grid Fir
 
 **MOD GEN4 (TL3-XH profile only):**
 
-| Entity | Type | Register | New? |
-|--------|------|----------|------|
-| Allow Grid Charge | Select | 3049 | New |
-| TOU Period 5 Start / End | Time | 3050, 3051 | New |
-| TOU Period 5 Priority | Select | 3050 (bits) | New |
-| TOU Period 5 Enable | Select | 3050 (bit 15) | New |
-| TOU Period 6–9 (×4) | Time + Select ×2 | 3052–3059 | New |
+
+| Entity                   | Type              | Register      | New? |
+| -------------------------- | ------------------- | --------------- | ------ |
+| Allow Grid Charge        | Select            | 3049          | New  |
+| TOU Period 5 Start / End | Time              | 3050, 3051    | New  |
+| TOU Period 5 Priority    | Select            | 3050 (bits)   | New  |
+| TOU Period 5 Enable      | Select            | 3050 (bit 15) | New  |
+| TOU Period 6–9 (×4)    | Time + Select ×2 | 3052–3059    | New  |
 
 **SPH GEN3 (3000–10000 TL profiles):**
 
-| Entity group | Type | Registers | New? |
-|---|---|---|---|
-| Batt First Period 4–6 Start/End | Time (×6) | 1017–1025 | New |
-| Batt First Period 4–6 Enable | Select (×3) | 1019, 1022, 1025 | New |
-| Grid First Period 4–6 Start/End | Time (×6) | 1026–1034 | New |
-| Grid First Period 4–6 Enable | Select (×3) | 1028, 1031, 1034 | New |
-| Grid First Period 7–9 Start/End | Time (×6) | 1080–1088 | New |
-| Grid First Period 7–9 Enable | Select (×3) | 1082, 1085, 1088 | New |
+
+| Entity group                     | Type         | Registers        | New? |
+| ---------------------------------- | -------------- | ------------------ | ------ |
+| Batt First Period 4–6 Start/End | Time (×6)   | 1017–1025       | New  |
+| Batt First Period 4–6 Enable    | Select (×3) | 1019, 1022, 1025 | New  |
+| Grid First Period 4–6 Start/End | Time (×6)   | 1026–1034       | New  |
+| Grid First Period 4–6 Enable    | Select (×3) | 1028, 1031, 1034 | New  |
+| Grid First Period 7–9 Start/End | Time (×6)   | 1080–1088       | New  |
+| Grid First Period 7–9 Enable    | Select (×3) | 1082, 1085, 1088 | New  |
 
 ---
 
@@ -139,17 +209,18 @@ Some WIT firmware variants do not implement `Ibat` in the VPP cluster register 3
 
 ### Files Changed
 
-| File | Change |
-|------|--------|
-| `profiles/mod.py` | Added registers 3049 and 3050–3059 to MOD_6000_15000TL3_XH holding_registers; `maps_to='power_to_grid_low'` on register 31113 |
-| `profiles/sph.py` | Added registers 1017–1034 and 1080–1088 to SPH_3000_6000 and SPH_7000_10000 |
-| `profiles/wit.py` | Added registers 3169–3171 as internal battery fallback sources |
-| `const.py` | Extended MOD_TOU_PERIODS to 9 entries; added allow_grid_charge and SPH extended periods to WRITABLE_REGISTERS |
-| `growatt_modbus.py` | Added GrowattData fields and coordinator reads for all new registers; power_to_grid VPP fallback; battery_current cascade |
-| `select.py` | Added GrowattModAllowGridChargeSelect class |
-| `time.py` | Replaced dual single-register writes with atomic FC16 pair writes for GrowattModTouTime |
-| `docs/CONTROLS.md` | New comprehensive control guide covering all model families |
-| `docs/images/` | New SVG diagrams: tou-register-map, mod-tou-setup-flow, sph-time-periods, control-model-comparison |
+
+| File                | Change                                                                                                                        |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `profiles/mod.py`   | Added registers 3049 and 3050–3059 to MOD_6000_15000TL3_XH holding_registers;`maps_to='power_to_grid_low'` on register 31113 |
+| `profiles/sph.py`   | Added registers 1017–1034 and 1080–1088 to SPH_3000_6000 and SPH_7000_10000                                                 |
+| `profiles/wit.py`   | Added registers 3169–3171 as internal battery fallback sources                                                               |
+| `const.py`          | Extended MOD_TOU_PERIODS to 9 entries; added allow_grid_charge and SPH extended periods to WRITABLE_REGISTERS                 |
+| `growatt_modbus.py` | Added GrowattData fields and coordinator reads for all new registers; power_to_grid VPP fallback; battery_current cascade     |
+| `select.py`         | Added GrowattModAllowGridChargeSelect class                                                                                   |
+| `time.py`           | Replaced dual single-register writes with atomic FC16 pair writes for GrowattModTouTime                                       |
+| `docs/CONTROLS.md`  | New comprehensive control guide covering all model families                                                                   |
+| `docs/images/`      | New SVG diagrams: tou-register-map, mod-tou-setup-flow, sph-time-periods, control-model-comparison                            |
 
 ---
 
@@ -214,13 +285,14 @@ The entity registry migration is automatic — the integration's entities will a
 
 #### New entity ID pattern (examples)
 
-| Entity | Old ID (v0.6.6 bugged) | New ID (v0.6.7) |
-| ------ | ---------------------- | --------------- |
+
+| Entity               | Old ID (v0.6.6 bugged)                                           | New ID (v0.6.7)                                   |
+| ---------------------- | ------------------------------------------------------------------ | --------------------------------------------------- |
 | Energy to Grid Today | `sensor.growatt_modbus_grid_growatt_modbus_energy_to_grid_today` | `sensor.growatt_modbus_grid_energy_to_grid_today` |
-| Battery SoC | `sensor.growatt_modbus_battery_growatt_modbus_battery_soc` | `sensor.growatt_modbus_battery_battery_soc` |
-| PV Energy Today | `sensor.growatt_modbus_solar_growatt_modbus_energy_today` | `sensor.growatt_modbus_solar_energy_today` |
-| House Consumption | `sensor.growatt_modbus_load_growatt_modbus_house_consumption` | `sensor.growatt_modbus_load_house_consumption` |
-| Inverter Status | `sensor.growatt_modbus_growatt_modbus_inverter_status` | `sensor.growatt_modbus_inverter_status` |
+| Battery SoC          | `sensor.growatt_modbus_battery_growatt_modbus_battery_soc`       | `sensor.growatt_modbus_battery_battery_soc`       |
+| PV Energy Today      | `sensor.growatt_modbus_solar_growatt_modbus_energy_today`        | `sensor.growatt_modbus_solar_energy_today`        |
+| House Consumption    | `sensor.growatt_modbus_load_growatt_modbus_house_consumption`    | `sensor.growatt_modbus_load_house_consumption`    |
+| Inverter Status      | `sensor.growatt_modbus_growatt_modbus_inverter_status`           | `sensor.growatt_modbus_inverter_status`           |
 
 > **Note:** If your integration name is not "Growatt Modbus" (e.g., you renamed it during setup), substitute your actual device name slug in the examples above.
 
@@ -254,12 +326,13 @@ The 3000-range charge/discharge registers (3178–3181) used as the primary batt
 
 The following controls now appear on MOD Hybrid installs. All four holding registers were confirmed responding in scan #228:
 
-| Control | Register | Description |
-| ------- | -------- | ----------- |
-| Discharge Stopped SoC | 1071 | Minimum SoC before battery stops discharging |
-| Charge Power Rate | 1090 | Battery charge power rate limit (0–100%) |
-| Charge Stopped SoC | 1091 | SoC level at which battery stops charging |
-| AC Charge Enable | 1092 | Allow charging from the grid (AC source) |
+
+| Control               | Register | Description                                  |
+| ----------------------- | ---------- | ---------------------------------------------- |
+| Discharge Stopped SoC | 1071     | Minimum SoC before battery stops discharging |
+| Charge Power Rate     | 1090     | Battery charge power rate limit (0–100%)    |
+| Charge Stopped SoC    | 1091     | SoC level at which battery stops charging    |
+| AC Charge Enable      | 1092     | Allow charging from the grid (AC source)     |
 
 ---
 
@@ -296,11 +369,8 @@ Issues: #203 · #204 · #18 · #131 · #206 · #212 · #214 · #224 · #226
 Two further root causes found after the v0.6.6b2 fix for issue #206:
 
 1. **Empty register response not treated as failure** (`growatt_modbus.py`): When the RS485-to-TCP adapter is online but the inverter is sleeping, some adapters return a valid TCP frame with an empty register list. This passed the non-None check, set `_inverter_online = True`, and all sensor values defaulted to `0.0`. Empty and short-count responses are now rejected as read failures, correctly triggering offline behaviour.
-
 2. **Energy retention not persisted across HA restarts** (`coordinator.py`): `_retained_lifetime_totals` and `_retained_daily_totals` were in-memory dicts, cleared on every restart. After a nighttime HA restart, there was no retained baseline to compare against when the dormant inverter returned zeros. These dicts are now persisted to HA storage (`.storage/growatt_modbus.<entry_id>_energy_totals`) — lifetime totals always restored; daily totals restored only if saved on the same calendar day.
-
 3. **Wrong field names in debounce reset** (`coordinator.py`): The wakeup debounce was assigning to `data.battery_charge_today` / `data.battery_discharge_today` (non-existent fields). Corrected to `charge_energy_today` / `discharge_energy_today`.
-
 4. **Battery energy fields missing from midnight reset** (`coordinator.py`): Both midnight reset paths now zero `charge_energy_today`, `discharge_energy_today`, `ac_charge_energy_today`, `ac_discharge_energy_today`, `op_discharge_energy_today`.
 
 ---
@@ -488,13 +558,14 @@ Scanner now covers VPP control holding registers (30100–30499, individually en
 
 **Fix:** Added the following registers to both V201 profiles in `profiles/sph.py`, per Growatt Modbus RTU V1.20 protocol:
 
-| Register | Name | Description |
-| --- | --- | --- |
-| 1021-1022 | `power_to_user` | AC power to user total (grid import power) |
-| 1029-1030 | `power_to_grid` | AC power to grid total (signed: positive=export) |
-| 1037-1038 | `power_to_load` | INV power to local load total |
-| 1044-1045 | `energy_to_user_today` | Grid import energy today |
-| 1046-1047 | `energy_to_user_total` | Grid import energy total |
+
+| Register  | Name                   | Description                                      |
+| ----------- | ------------------------ | -------------------------------------------------- |
+| 1021-1022 | `power_to_user`        | AC power to user total (grid import power)       |
+| 1029-1030 | `power_to_grid`        | AC power to grid total (signed: positive=export) |
+| 1037-1038 | `power_to_load`        | INV power to local load total                    |
+| 1044-1045 | `energy_to_user_today` | Grid import energy today                         |
+| 1046-1047 | `energy_to_user_total` | Grid import energy total                         |
 
 ---
 
@@ -515,22 +586,22 @@ Scanner now covers VPP control holding registers (30100–30499, individually en
 **Root cause — two bugs in `profiles/sph_tl3.py`:**
 
 1. **Missing holding registers:** The base profile only defined 3 holding registers (`on_off`, `system_enable`, `priority`). The integration creates control entities only for registers present in the profile, so 14 registers (1070–1071, 1090–1092, 1100–1108) were absent → no entities created.
-
 2. **Wrong register name:** Register 1044 was named `priority` instead of `priority_mode`. All control write paths resolve registers by name — `SELECT_DEFINITIONS` uses the key `priority_mode`, so no holding register was found at write time → silently dropped.
 
 **Fix:** Replaced the `holding_registers` block in `profiles/sph_tl3.py` with the full 18-register set (matching SPH 7-10kW single-phase), adding the correct name and full metadata for each register. The `SPH_TL3_3000_10000_V201` profile inherits these automatically via Python dict unpacking.
 
 **Controls now available for SPH TL3:**
 
-| Register | Entity | Description |
-| --- | --- | --- |
-| 1044 | Priority Mode | Load First / Battery First / Grid First |
-| 1070 | Discharge Power Rate | % limit on battery discharge |
-| 1071 | Discharge Stop SOC | SOC% at which discharge halts |
-| 1090 | Charge Power Rate | % limit on battery charge |
-| 1091 | Charge Stop SOC | SOC% at which charge halts |
-| 1092 | AC Charge Enable | Enable/disable charging from grid |
-| 1100–1108 | Time Periods 1–3 | Start/end/enable for timed charge windows |
+
+| Register   | Entity               | Description                               |
+| ------------ | ---------------------- | ------------------------------------------- |
+| 1044       | Priority Mode        | Load First / Battery First / Grid First   |
+| 1070       | Discharge Power Rate | % limit on battery discharge              |
+| 1071       | Discharge Stop SOC   | SOC% at which discharge halts             |
+| 1090       | Charge Power Rate    | % limit on battery charge                 |
+| 1091       | Charge Stop SOC      | SOC% at which charge halts                |
+| 1092       | AC Charge Enable     | Enable/disable charging from grid         |
+| 1100–1108 | Time Periods 1–3    | Start/end/enable for timed charge windows |
 
 ---
 
@@ -546,12 +617,13 @@ Three battery energy sensors were always reporting 0 for **MIN TL-XH 3000-10000 
 
 **Fix:** Added the missing registers to `profiles/tl_xh.py`, confirmed against real hardware scan:
 
-| Registers | Sensor | Confirmed Value |
-| --- | --- | --- |
-| 3127 / 3128 | Battery Discharge Total | 481.5 kWh |
-| 3131 / 3132 | Battery Charge Total | 528.9 kWh |
-| 3133 / 3134 | AC Charge Energy Today | ~0 kWh (grid→battery today) |
-| 3135 / 3136 | AC Charge Energy Total | 37.4 kWh (grid→battery lifetime) |
+
+| Registers   | Sensor                  | Confirmed Value                   |
+| ------------- | ------------------------- | ----------------------------------- |
+| 3127 / 3128 | Battery Discharge Total | 481.5 kWh                         |
+| 3131 / 3132 | Battery Charge Total    | 528.9 kWh                         |
+| 3133 / 3134 | AC Charge Energy Today  | ~0 kWh (grid→battery today)      |
+| 3135 / 3136 | AC Charge Energy Total  | 37.4 kWh (grid→battery lifetime) |
 
 The `ac_charge_energy_total` register (3135/3136) tracks exclusively grid→battery charging, matching the Growatt server "Batterieladung aus Stromnetz" lifetime value.
 
@@ -587,21 +659,22 @@ The **MOD 10000TL3-XH** (VPP V2.01, DTC 5400) profile now exposes complete batte
 
 **New sensors for MOD TL3-XH:**
 
-| Registers | Sensor | Scale | Confirmed at Scan |
-| --- | --- | --- | --- |
-| 3125 / 3126 | Battery Discharge Today | ×0.1 kWh | 6.3 kWh |
-| 3127 / 3128 | Battery Discharge Total | ×0.1 kWh | 1216.9 kWh |
-| 3129 / 3130 | Battery Charge Today | ×0.1 kWh | 4.3 kWh |
-| 3131 / 3132 | Battery Charge Total | ×0.1 kWh | 1389.0 kWh |
-| 3133 / 3134 | AC Charge Energy Today | ×0.1 kWh | 4.0 kWh |
-| 3135 / 3136 | AC Charge Energy Total | ×0.1 kWh | 530.5 kWh |
-| 3169 | Battery Voltage | ×0.01 V | 72.83 V |
-| 3170 | Battery Current | ×0.1 A | 0.0 A |
-| 3171 | Battery SOC | ×1 % | 10% (confirmed at scan) |
-| 3175 / 3176 | Battery Temp | ×0.1 °C | 45.4°C |
-| 3178 / 3179 | Battery Discharge Power | ×0.1 W | 5.0 W |
-| 3180 / 3181 | Battery Charge Power | ×0.1 W | 0.0 W |
-| 31218 | Battery SOH | ×1 % | 100% |
+
+| Registers   | Sensor                  | Scale     | Confirmed at Scan       |
+| ------------- | ------------------------- | ----------- | ------------------------- |
+| 3125 / 3126 | Battery Discharge Today | ×0.1 kWh | 6.3 kWh                 |
+| 3127 / 3128 | Battery Discharge Total | ×0.1 kWh | 1216.9 kWh              |
+| 3129 / 3130 | Battery Charge Today    | ×0.1 kWh | 4.3 kWh                 |
+| 3131 / 3132 | Battery Charge Total    | ×0.1 kWh | 1389.0 kWh              |
+| 3133 / 3134 | AC Charge Energy Today  | ×0.1 kWh | 4.0 kWh                 |
+| 3135 / 3136 | AC Charge Energy Total  | ×0.1 kWh | 530.5 kWh               |
+| 3169        | Battery Voltage         | ×0.01 V  | 72.83 V                 |
+| 3170        | Battery Current         | ×0.1 A   | 0.0 A                   |
+| 3171        | Battery SOC             | ×1 %     | 10% (confirmed at scan) |
+| 3175 / 3176 | Battery Temp            | ×0.1 °C | 45.4°C                 |
+| 3178 / 3179 | Battery Discharge Power | ×0.1 W   | 5.0 W                   |
+| 3180 / 3181 | Battery Charge Power    | ×0.1 W   | 0.0 W                   |
+| 31218       | Battery SOH             | ×1 %     | 100%                    |
 
 Register scan was conducted at night (SOC=10% confirmed), validating register 3171=10 as SOC and 31218=100 as State of Health.
 
@@ -619,43 +692,46 @@ This release documents and validates the full control entity stack for SPH, SPF,
 
 #### SPH Hybrid (3–10kW) — Persistent Writes
 
-| Entity | Type | Register | Options / Range |
-| --- | --- | --- | --- |
-| Priority Mode | Select | 1044 | Load First / Battery First / Grid First |
-| AC Charge Enable | Select | 1092 | Disabled / Enabled |
-| Discharge Power Rate | Number | 1070 | 0–100 % |
-| Discharge Stop SOC | Number | 1071 | 0–100 % |
-| Charge Power Rate | Number | 1090 | 0–100 % |
-| Charge Stop SOC | Number | 1091 | 0–100 % |
-| Time Period 1–3 Start/End/Enable | Number/Select | 1100–1108 | HHMM / Enabled-Disabled |
-| System Enable | Select | 1008 | Disabled / Enabled *(HU models only)* |
+
+| Entity                            | Type          | Register   | Options / Range                         |
+| ----------------------------------- | --------------- | ------------ | ----------------------------------------- |
+| Priority Mode                     | Select        | 1044       | Load First / Battery First / Grid First |
+| AC Charge Enable                  | Select        | 1092       | Disabled / Enabled                      |
+| Discharge Power Rate              | Number        | 1070       | 0–100 %                                |
+| Discharge Stop SOC                | Number        | 1071       | 0–100 %                                |
+| Charge Power Rate                 | Number        | 1090       | 0–100 %                                |
+| Charge Stop SOC                   | Number        | 1091       | 0–100 %                                |
+| Time Period 1–3 Start/End/Enable | Number/Select | 1100–1108 | HHMM / Enabled-Disabled                 |
+| System Enable                     | Select        | 1008       | Disabled / Enabled*(HU models only)*    |
 
 #### SPF Off-Grid (3–6kW) — Persistent Writes
 
-| Entity | Type | Register | Options / Range |
-| --- | --- | --- | --- |
-| Output Priority | Select | 1 | SBU / SOL / UTI / SUB |
-| Charge Priority | Select | 2 | CSO / SNU / OSO |
-| AC Input Mode | Select | 8 | APL / UPS / GEN |
-| Battery Type | Select | 39 | AGM / Flooded / User / Lithium / User 2 |
-| AC Charge Current | Number | 38 | 0–80 A |
-| Generator Charge Current | Number | 83 | 0–80 A |
-| Battery→Utility SOC | Number | 37 | 0–100 % (Lithium) |
-| Utility→Battery SOC | Number | 95 | 0–100 % (Lithium) |
+
+| Entity                   | Type   | Register | Options / Range                         |
+| -------------------------- | -------- | ---------- | ----------------------------------------- |
+| Output Priority          | Select | 1        | SBU / SOL / UTI / SUB                   |
+| Charge Priority          | Select | 2        | CSO / SNU / OSO                         |
+| AC Input Mode            | Select | 8        | APL / UPS / GEN                         |
+| Battery Type             | Select | 39       | AGM / Flooded / User / Lithium / User 2 |
+| AC Charge Current        | Number | 38       | 0–80 A                                 |
+| Generator Charge Current | Number | 83       | 0–80 A                                 |
+| Battery→Utility SOC     | Number | 37       | 0–100 % (Lithium)                      |
+| Utility→Battery SOC     | Number | 95       | 0–100 % (Lithium)                      |
 
 #### WIT Commercial Hybrid (4–15kW) — VPP Time-Limited Overrides
 
-| Entity | Type | Register | Options / Range |
-| --- | --- | --- | --- |
-| Work Mode | Select | 202 | Standby / Charge / Discharge |
-| Active Power Rate | Number | 201 | 0–100 % |
-| Export Limit (W) | Number | 203 | 0–20000 W |
-| Control Authority | Select | 30100 | Disabled / Enabled |
-| VPP Export Limit Enable | Select | 30200 | Disabled / Enabled |
-| VPP Export Limit Rate | Number | 30201 | −100–+100 % |
-| Remote Power Control | Select | 30407 | Disabled / Enabled |
-| Remote Control Duration | Number | 30408 | 0–1440 min |
-| Remote Charge/Discharge Power | Number | 30409 | −100–+100 % |
+
+| Entity                        | Type   | Register | Options / Range              |
+| ------------------------------- | -------- | ---------- | ------------------------------ |
+| Work Mode                     | Select | 202      | Standby / Charge / Discharge |
+| Active Power Rate             | Number | 201      | 0–100 %                     |
+| Export Limit (W)              | Number | 203      | 0–20000 W                   |
+| Control Authority             | Select | 30100    | Disabled / Enabled           |
+| VPP Export Limit Enable       | Select | 30200    | Disabled / Enabled           |
+| VPP Export Limit Rate         | Number | 30201    | −100–+100 %                |
+| Remote Power Control          | Select | 30407    | Disabled / Enabled           |
+| Remote Control Duration       | Number | 30408    | 0–1440 min                  |
+| Remote Charge/Discharge Power | Number | 30409    | −100–+100 %                |
 
 WIT commands are time-limited. The inverter reverts to its TOU schedule when the duration expires. See [docs/WIT_CONTROL_GUIDE.md](WIT_CONTROL_GUIDE.md) for the full VPP protocol explanation.
 
@@ -665,17 +741,18 @@ WIT commands are time-limited. The inverter reverts to its TOU schedule when the
 
 ### Model and Sensor Availability Summary
 
-| Model | Battery Sensors | Battery Control | Control Method | Notes |
-| --- | --- | --- | --- | --- |
-| **SPH 3–6kW** | Yes | Yes | Persistent writes | Registers 1044, 1070–1108 |
-| **SPH 7–10kW** | Yes | Yes | Persistent writes | Same register range as 3–6kW |
-| **SPH/SPM HU 8–10kW** | Yes + BMS | Yes | Persistent writes | Adds BMS sensors, system_enable (1008) |
-| **SPF 3–6kW ES PLUS** | Yes (limited) | Yes | Persistent writes | No battery temp; current only during AC charge |
-| **WIT 4–15kW** | Yes | Yes (timed) | VPP overrides | Time-limited; base mode is read-only |
-| **MOD 10000TL3-XH** | Yes (new) | No (pending) | — | Control registers not yet confirmed |
-| **MIN TL-XH 3–10kW** | Yes (fixed) | No | — | No battery control registers |
-| **MIN 3–10kW** | No | No | — | Grid-tied, no battery |
-| **MIC 0.6–3.3kW** | No | No | — | Grid-tied micro inverter |
+
+| Model                  | Battery Sensors | Battery Control | Control Method    | Notes                                          |
+| ------------------------ | ----------------- | ----------------- | ------------------- | ------------------------------------------------ |
+| **SPH 3–6kW**         | Yes             | Yes             | Persistent writes | Registers 1044, 1070–1108                     |
+| **SPH 7–10kW**        | Yes             | Yes             | Persistent writes | Same register range as 3–6kW                  |
+| **SPH/SPM HU 8–10kW** | Yes + BMS       | Yes             | Persistent writes | Adds BMS sensors, system_enable (1008)         |
+| **SPF 3–6kW ES PLUS** | Yes (limited)   | Yes             | Persistent writes | No battery temp; current only during AC charge |
+| **WIT 4–15kW**        | Yes             | Yes (timed)     | VPP overrides     | Time-limited; base mode is read-only           |
+| **MOD 10000TL3-XH**    | Yes (new)       | No (pending)    | —                | Control registers not yet confirmed            |
+| **MIN TL-XH 3–10kW**  | Yes (fixed)     | No              | —                | No battery control registers                   |
+| **MIN 3–10kW**        | No              | No              | —                | Grid-tied, no battery                          |
+| **MIC 0.6–3.3kW**     | No              | No              | —                | Grid-tied micro inverter                       |
 
 ---
 
@@ -690,6 +767,7 @@ This release fixes critical energy calculation issues for **MIN TL-XH 3000-10000
 **Problem 1: Grid Import Energy Showing Zero or Null**
 
 After upgrading from v0.4.9 to v0.5.1+, MIN TL-XH users reported:
+
 - Grid import energy became null/zero after update
 - Grid power visible but grid import energy was 0
 - Energy dashboard showed no grid import despite actually importing from grid
@@ -698,6 +776,7 @@ After upgrading from v0.4.9 to v0.5.1+, MIN TL-XH users reported:
 Version 0.5.1 (commit df333cb) fixed SPH-TL3 grid import energy by using hardware register `energy_to_user_today/total`. However, the code incorrectly assumed this register means "grid import" for ALL inverter models.
 
 The `energy_to_user` register has **different meanings** on different inverter series:
+
 - **SPH family**: `energy_to_user` = Grid IMPORT energy (energy FROM grid TO load)
 - **MIN TL-XH family**: `energy_to_user` = Forward active energy (NOT grid import)
 
@@ -706,6 +785,7 @@ This caused MIN TL-XH to use the wrong register (3067-3068) for grid import, res
 **Problem 2: Battery Discharge Counted as Solar Production**
 
 MIN TL-XH users reported:
+
 - Solar energy showing higher values than expected
 - Battery discharge energy being counted as solar production
 - Home energy calculations incorrect due to inflated solar values
@@ -738,6 +818,7 @@ pv_energy_today = load_energy + battery_charge + grid_export
 ```
 
 This ensures:
+
 - Battery discharge is NOT counted as solar production
 - Solar energy reflects actual PV generation only
 - Energy balance is mathematically correct
@@ -745,12 +826,14 @@ This ensures:
 ### Impact:
 
 **Grid Import Energy:**
+
 - ✅ MIN TL-XH now correctly calculates grid import energy
 - ✅ No longer uses wrong `energy_to_user` register
 - ✅ Grid import values are accurate and stable
 - ✅ SPH family continues to work correctly with `energy_to_user` register
 
 **Solar Energy Production:**
+
 - ✅ Battery discharge no longer counted as solar
 - ✅ Solar energy shows accurate PV-only generation
 - ✅ Home energy calculations now correct
@@ -776,11 +859,13 @@ This ensures:
 ### Technical Details:
 
 **Files Changed:**
+
 - `custom_components/growatt_modbus/sensor.py`:
   - Restricted `energy_to_user` to SPH family only (lines 1227, 1258)
   - Added MIN TL-XH energy balance calculation (lines 1295-1308)
 
 **Related Issues:**
+
 - Fixes user report: Grid import null after v0.4.9 update
 - Fixes user report: Battery discharge counted as solar energy
 - Related to Issue #183 (SPH-TL3 grid energy fix that caused this regression)
@@ -818,12 +903,14 @@ This release fixes battery power inversion issues where battery charge/discharge
 
 **Problem:**
 Users with SPH, SPM, and MIN TL-XH inverters using VPP protocol registers reported battery power values showing with inverted signs:
+
 - Battery power showing large positive values (e.g., 56353W) when actually discharging at -918.3W
 - Charge/discharge direction appearing backwards in Home Assistant
 - Battery power calculations not matching voltage × current
 
 **Root Cause:**
 Battery power registers in VPP protocol (31200-31209) use **signed 16-bit values**, but were being interpreted as unsigned integers. This caused:
+
 - Negative discharge values to wrap around to large positive numbers
 - Sign bit (0x8000) not being recognized
 - Example: -9183 (0xDC31) read as 56353 instead
@@ -836,17 +923,19 @@ The existing `_get_register_value()` method already had correct signed conversio
 **Added `'signed': True` to VPP battery power registers:**
 
 1. **SPH profiles** (register 31203):
-   - `battery_charge_power_low` now marked as signed
 
+   - `battery_charge_power_low` now marked as signed
 2. **TL_XH profiles** (registers 31205, 31209):
+
    - `charge_power_low` now marked as signed
    - `discharge_power_low` now marked as signed
-
 3. **MIN TL-XH profiles** (registers 31205, 31209):
+
    - `charge_power_low` now marked as signed
    - `discharge_power_low` now marked as signed
 
 **Updated register descriptions:**
+
 ```python
 # Before:
 31205: {'name': 'charge_power_low', 'desc': 'Battery charge power (unsigned, positive=charging)'}
@@ -861,15 +950,18 @@ Additionally, this release includes improved battery register fallback detection
 
 **The Challenge:**
 Inverters may support multiple register ranges for battery data:
+
 - **VPP registers** (31200-31299): Modern VPP Protocol V2.01 with signed values
 - **Fallback registers** (3000-3999): Legacy range with unsigned/different conventions
 
 Previous implementation would try both ranges independently for each sensor, which could:
+
 - Mix VPP and fallback values across different sensors
 - Not distinguish between "legitimately zero" vs "wrong register range"
 - Cause inconsistent battery power calculations
 
 **The Solution:**
+
 - Detect which register range is active (VPP vs fallback) **once per session**
 - Check multiple key battery sensors (voltage, SOC, power, energy) for non-zero values
 - Use score-based detection: whichever range has more non-zero values wins
@@ -877,6 +969,7 @@ Previous implementation would try both ranges independently for each sensor, whi
 - Default to fallback if both ranges are zero (more universal)
 
 This ensures:
+
 - Proper sign interpretation based on register range (VPP=signed, fallback=may vary)
 - Consistent data source across all battery sensors
 - No mixing of VPP and fallback register data
@@ -893,21 +986,25 @@ This ensures:
 ### Affected Models:
 
 **Fixed by VPP register signing:**
+
 - SPH 3-6kW, 7-10kW (VPP Protocol V2.01)
 - SPM series
 - MIN TL-XH 3000-10000 (VPP Protocol V2.01)
 - MOD TL3-XH series
 
 **Improved by register range detection:**
+
 - All models with both VPP and fallback battery registers
 
 ### Code Changes:
 
 **Profiles** (`sph.py`, `tl_xh.py`):
+
 - Added `'signed': True` to battery power registers 31203, 31205, 31209
 - Updated register descriptions to clarify sign conventions
 
 **Core Logic** (`growatt_modbus.py`):
+
 - Added `_battery_register_range` detection logic
 - Score-based detection across multiple battery sensors
 - Consistent range usage via `_get_register_value_with_fallback()`
@@ -928,6 +1025,7 @@ This release fixes a sensor visibility issue where **WIT-specific sensors** (`ba
 
 **Problem:**
 Users with non-WIT inverters (MIN TL-XH, SPH, MOD, etc.) reported seeing WIT-only battery sensors that always showed 0:
+
 - Battery State of Health (SOH): 0%
 - Battery Voltage BMS: 0V
 
@@ -937,6 +1035,7 @@ These sensors are only valid for **WIT series inverters** (WIT 4-15kW), which ha
 The `battery_soh` and `battery_voltage_bms` attributes were defined in the `GrowattData` dataclass with default values of 0.0. This meant `hasattr(data, 'battery_soh')` always returned `True`, causing Home Assistant to create sensors for all inverter profiles regardless of whether they actually support these registers.
 
 **Evidence:**
+
 - MIN TL-XH profile: No registers 8094 (battery_soh) or 8095 (battery_voltage_bms)
 - SPH TL3 profile: No WIT battery registers
 - WIT profile: Has registers 8094 and 8095 ✅
@@ -946,11 +1045,10 @@ The `battery_soh` and `battery_voltage_bms` attributes were defined in the `Grow
 **Changed sensor creation logic:**
 
 1. **Removed from dataclass defaults**: `battery_soh` and `battery_voltage_bms` no longer have default 0.0 values in `GrowattData`
-
 2. **Set dynamically only**: These attributes are now only created via `setattr()` when:
+
    - The profile has the corresponding registers (8094, 8095)
    - The registers have valid data
-
 3. **Matches BMS sensor pattern**: This follows the same approach used for other advanced sensors like `bms_soh`, `bms_constant_volt`, etc.
 
 ### Impact:
@@ -963,6 +1061,7 @@ The `battery_soh` and `battery_voltage_bms` attributes were defined in the `Grow
 ### Code Changes:
 
 **Lines 216-217** (`growatt_modbus.py`):
+
 ```python
 # Before:
 battery_soh: float = 0.0          # % (State of Health - WIT)
@@ -973,6 +1072,7 @@ battery_voltage_bms: float = 0.0  # V (BMS voltage reading - WIT)
 ```
 
 **Lines 1724-1737** (`growatt_modbus.py`):
+
 ```python
 # Changed from direct assignment to conditional setattr:
 if addr:
@@ -984,6 +1084,7 @@ if addr:
 ### Affected Models:
 
 **Benefit from this fix** (cleaner sensor list):
+
 - MIN TL-XH 3000-10000
 - SPH 3-6kW, 7-10kW, SPH-TL3
 - MOD 6000-15000TL3-XH
@@ -991,6 +1092,7 @@ if addr:
 - SPF off-grid series
 
 **Still see these sensors** (as intended):
+
 - WIT 4000-15000TL3 (only series with these registers)
 
 ### Migration Notes:
@@ -1018,6 +1120,7 @@ This release fixes a critical battery sensor issue for **MIN TL-XH 3000-10000 V2
 
 **Problem:**
 MIN TL-XH users with battery storage (e.g., MIN-4600TL-XH with ARK battery) reported zero values for all battery sensors:
+
 - Battery voltage: 0V (should be ~212V)
 - Battery current: 0A
 - Battery SOC: 0% (should be actual percentage like 54%)
@@ -1027,13 +1130,15 @@ MIN TL-XH users with battery storage (e.g., MIN-4600TL-XH with ARK battery) repo
 The MIN TL-XH V2.01 profile was using VPP Protocol registers (31200+ range) for battery state, based on the official Growatt VPP Protocol V2.01 specification. However, user scan data proved that MIN TL-XH inverters **do NOT use the VPP 31200+ range** for battery state - they use the **3000+ range** (similar to MOD series layout).
 
 **Evidence from user register scan:**
+
 - VPP range (31200-31222): **ALL ZEROS** ❌
+
   - 31214 battery_voltage: 0
   - 31215 battery_current: 0
   - 31217 battery_soc: 0
   - 31222 battery_temp: 0
-
 - 3000+ range: **HAS BATTERY DATA** ✅
+
   - 3169: 21194 → 211.94V (scale 0.01)
   - 3170: battery current (scale 0.1)
   - 3171: 54 → 54% SOC
@@ -1044,17 +1149,17 @@ The MIN TL-XH V2.01 profile was using VPP Protocol registers (31200+ range) for 
 **For MIN_TL_XH_3000_10000_V201 profile:**
 
 1. **Added PRIMARY battery state registers** at 3169-3176 (3000+ range):
+
    - 3169: battery_voltage (scale 0.01, note different scale than VPP!)
    - 3170: battery_current (scale 0.1, signed)
    - 3171: battery_soc (scale 1)
    - 3176: battery_temp (scale 0.1, signed)
-
 2. **Renamed VPP 31200+ battery registers** with `_vpp` suffix:
+
    - 31214: battery_voltage_vpp (not used on MIN TL-XH)
    - 31215: battery_current_vpp (not used on MIN TL-XH)
    - 31217: battery_soc_vpp (not used on MIN TL-XH)
    - 31222: battery_temp_vpp (not used on MIN TL-XH)
-
 3. **Important scale difference**: Battery voltage uses scale **0.01** in 3000+ range vs **0.1** in VPP range!
 
 ### Impact:
@@ -1107,6 +1212,7 @@ This release fixes a critical battery SOC (State of Charge) reading issue for **
 
 **Problem:**
 After upgrading to v0.5.4+, some SPH users reported that battery SOC disappeared or showed 0% instead of the actual value:
+
 - Battery SOC sensor showing 0% despite battery being charged (e.g., should be 100%)
 - Register 17 (legacy) returns incorrect value (0%)
 - Register 31217 (VPP range) contains the correct SOC value
@@ -1114,6 +1220,7 @@ After upgrading to v0.5.4+, some SPH users reported that battery SOC disappeared
 
 **Root Cause:**
 The `_find_register_by_name('battery_soc')` function searches input registers in insertion order and returns the first name match. Even though register 1086 was added in v0.5.5 as an "override" for standard SPH V201 models:
+
 1. Register 17 (inherited from base profile) with name='battery_soc' was found **first**
 2. Register 1086 with name='battery_soc' was never reached
 3. Register 31217 with maps_to='battery_soc' was never reached
@@ -1174,6 +1281,7 @@ This release applies the same battery sensor fixes from v0.5.1 (SPH 3-6kW) to th
 ### What Was Fixed:
 
 **Problem:** SPH 7-10kW V2.01 users were experiencing the same battery sensor issues that were fixed for SPH 3-6kW in v0.5.1, but the fixes were never applied to the 7-10kW profile:
+
 - Battery SOC showing 0% instead of actual value (e.g., should be 85%)
 - Battery energy registers showing incorrect values
 - AC charge energy sensor potentially showing garbage values
@@ -1186,11 +1294,13 @@ The battery sensor fixes from v0.5.1 (commit 9c71de7) were only applied to SPH_3
 Applied all three fixes to **SPH_7000_10000_V201** profile:
 
 **1. Battery SOC Fix:**
+
 - Added register 1086 for battery_soc (BMS value)
 - Overrides inherited register 17 which shows 0
 - Provides correct SOC reading from battery management system
 
 **2. Battery Energy Registers Fix:**
+
 - Changed registers 31202-31203 from `battery_charge_power` to `battery_discharge_today` (energy)
 - Added registers 31204-31205 for `battery_charge_total` (kWh)
 - Added registers 31206-31207 for `battery_charge_today` (kWh)
@@ -1198,6 +1308,7 @@ Applied all three fixes to **SPH_7000_10000_V201** profile:
 - Matches VPP Protocol V2.01 specification and real-world register data
 
 **3. AC Charge Energy Fix:**
+
 - Added register 115 for `ac_charge_energy_total`
 - Prevents incorrect 32-bit pairing of registers 31220-31221
 - Avoids garbage values like 70M+ kWh
@@ -1237,11 +1348,13 @@ This release improves the diagnostic register scan service to provide better vis
 ### What Was Fixed:
 
 **Problem:** Users manually selecting a profile (e.g., "MIN TL-XH") would run the register scan service and see only the auto-detected profile (e.g., "MOD series") in the CSV output. This caused confusion because:
+
 - The CSV only showed "Suggested Profile Key: mod_6000_15000tl3_xh" (auto-detected)
 - It didn't show what profile the user had actually selected and was using
 - Users thought the suggested profile was what they had configured
 
 **Impact:**
+
 - User's system was actually working correctly with the selected profile
 - But they couldn't see this in the diagnostic output
 - Led to confusion and unnecessary troubleshooting
@@ -1267,6 +1380,7 @@ Suggested Profile Key,mod_6000_15000tl3_xh
 ```
 
 This makes it clear:
+
 - ✅ What profile you have configured and are currently using
 - ✅ What profile the auto-detection suggests
 - ✅ Whether there's a mismatch between selected and detected
@@ -1298,18 +1412,21 @@ pv1_voltage,182.345
 ```
 
 Features:
+
 - ✅ Shows **all** entity values including zeros and unavailable
 - ✅ Clearly marks unavailable values as "None (unavailable)"
 - ✅ Alphabetically sorted for easy lookup
 - ✅ Formatted for readability (floats to 3 decimals)
 
 Benefits for debugging:
+
 - Compare raw register values vs. processed entity values
 - See complete snapshot of integration state at scan time
 - Identify which values are zero vs. missing vs. unavailable
 - Verify entity processing and calculations
 
 ### Files Changed:
+
 - `custom_components/growatt_modbus/diagnostic.py`:
   - Added imports for profile display name functions
   - Extract currently selected profile from coordinator
@@ -1317,6 +1434,7 @@ Benefits for debugging:
   - Display both sections in CSV before detection analysis
 
 ### Migration Notes:
+
 - **No action required** - Enhancement is automatic
 - Works when register scan finds a matching integration (same connection)
 - If no integration found, shows detection analysis only (as before)
@@ -1332,17 +1450,20 @@ This release fixes an issue where register 3136 (battery BMS temperature) was un
 ### What Was Fixed:
 
 **Problem:** Users reported seeing duplicate/incorrect battery sensors:
+
 - "Battery charging from mains power: **36.60 kWh**" (incorrect - actually a temperature!)
 - "Boost Temperature: 0.0°C" (incorrect - register 95 reads 0)
 - Missing battery BMS temperature sensor
 
 **Root Cause:**
+
 - Register 3136 was **not defined** in MOD 6000-15000TL3-XH and MIN TL-XH profiles
 - Raw value: 366 (36.6 with ×0.1 scale)
 - Integration misinterpreted this as **energy data** (36.60 kWh) instead of **temperature** (36.6°C)
 - Register is in the 3000+ extended range used by both MOD and MIN profiles
 
 **Additional Issue:**
+
 - User had MIN 3000 TL-XH (single-phase) but auto-detection selected MOD profile (three-phase)
 - Phase S/T registers all showed 0, confirming single-phase inverter
 - Wrong profile caused incorrect register mappings and missing/duplicate sensors
@@ -1352,19 +1473,22 @@ This release fixes an issue where register 3136 (battery BMS temperature) was un
 Added missing battery BMS temperature register to both profiles:
 
 1. **MOD 6000-15000TL3-XH Profile** (`profiles/mod.py`):
+
    - Register 96: `temp_sensor_1` (36.6°C - additional BMS/battery temperature)
    - Register 97: `temp_sensor_2` (32.7°C - matches Growatt server Boost Temp)
    - Register 3136: `battery_bms_temp` (36.6°C - battery BMS/module temperature)
-
 2. **MIN TL-XH 3000-10000 Profile** (`profiles/tl_xh.py`):
+
    - Register 3136: `battery_bms_temp` (36.6°C - battery BMS/module temperature)
 
 **Why Both Profiles:**
+
 - Register 3136 is in the **3000+ extended range** shared by both MOD and MIN inverters
 - Registers 96-97 are MOD-specific (0-124 base range, not used by MIN)
 - Fix benefits both actual MOD users and users who should be using MIN profile
 
 **Impact:**
+
 - ✅ New sensor: "Battery BMS Temp" showing correct temperature (36.6°C)
 - ✅ Removes incorrect "Battery charging from mains power: 36.60 kWh" sensor
 - ✅ Properly identifies temperature vs energy data
@@ -1376,24 +1500,27 @@ Added missing battery BMS temperature register to both profiles:
 
 1. **Update to v0.5.3**
 2. **Reconfigure to correct profile:**
+
    - Go to: Settings → Devices & Services → Growatt
    - Click **Configure** on your inverter
    - Change profile to: **MIN TL-XH 3000-10000 (V2.01)**
    - Save and restart Home Assistant
-
 3. **Verify after restart:**
+
    - ✅ "Battery BMS Temp" sensor appears (~36.6°C)
    - ❌ Incorrect "36.60 kWh" sensor removed
    - ✅ Battery power sensors still work correctly
    - ✅ Three-phase sensors (Phase S/T) hidden
 
 **For users with actual MOD inverters:**
+
 - Simply update to v0.5.3 and restart
 - New temperature sensors will appear automatically
 
 ### Technical Details:
 
 **Register Analysis from Scan (2026-03-09 14:12:43):**
+
 - Register 96 (base range): 366 raw = 36.6°C
 - Register 97 (base range): 327 raw = 32.7°C (matches Growatt server)
 - Register 3136 (extended): 366 raw = 36.6°C
@@ -1401,15 +1528,18 @@ Added missing battery BMS temperature register to both profiles:
 - Phase S/T registers: All 0 → Single-phase → MIN profile needed
 
 **Files Changed:**
+
 - `custom_components/growatt_modbus/profiles/mod.py` (lines 77-78, 123)
 - `custom_components/growatt_modbus/profiles/tl_xh.py` (line 312)
 
 **Affected Models:**
+
 - MOD 6000-15000TL3-XH (three-phase hybrid)
 - MIN TL-XH 3000-10000 (single-phase hybrid)
 - Any inverter using these profiles with battery BMS temperature at register 3136
 
 **Detection Improvement Needed:**
+
 - Auto-detection currently selects MOD for MIN inverters
 - Future improvement: Check phase S/T registers to distinguish single vs three-phase
 
@@ -1424,12 +1554,14 @@ This release fixes a critical bug where the integration fails to initialize on i
 ### What Was Fixed:
 
 **Problem:** After upgrading to v0.5.*, some users reported:
+
 - Integration stuck in "Initializing" state with constant retrying
 - Error in logs: `ExceptionResponse(dev_id=1, function_code=132, exception_code=4)`
 - Error message: `Modbus error reading input registers 3000-3078`
 - Downgrading to v0.4.8 resolves the issue
 
 **Root Cause:**
+
 - In v0.5.0, registers 3071-3078 were added to SPH V2.01 profiles for load energy and grid export energy metrics
 - These registers are in the MIN/MOD range (3000-3124) which not all inverters support
 - When reading the 3000 range, inverters without these registers return Modbus exception code 4 (Slave Device Failure)
@@ -1441,16 +1573,18 @@ This release fixes a critical bug where the integration fails to initialize on i
 Changed 3000 range register read failure handling from fatal to graceful degradation:
 
 1. **Non-Fatal Error Handling:**
+
    - Changed from `logger.error()` + `return None` to `logger.warning()` + continue
    - Matches the pattern used for storage and business register ranges
    - Allows initialization to complete even if extended registers aren't available
-
 2. **Graceful Degradation:**
+
    - Inverters **with** extended registers: Get full data including load energy metrics
    - Inverters **without** extended registers: Work normally with core functionality
    - No user intervention required - automatic compatibility
 
 **Impact:**
+
 - ✅ Integration initializes successfully on all inverter models
 - ✅ Fixes "stuck in Initializing" issue reported in #188
 - ✅ Backward compatible with inverters lacking extended register support
@@ -1473,15 +1607,18 @@ Changed 3000 range register read failure handling from fatal to graceful degrada
 ### Technical Details:
 
 **Files Changed:**
+
 - `custom_components/growatt_modbus/growatt_modbus.py:824-825`
 
 **What Changed:**
+
 - Modified `_read_registers()` method to handle 3000 range read failures gracefully
 - Changed error handling from fatal (return None) to warning (continue)
 - Inverters report Modbus exception code 4 when unsupported registers are requested
 - Integration now continues with available data instead of aborting
 
 **Affected Models:**
+
 - All inverter models that don't support registers 3071-3078 (load energy, grid export in MIN/MOD range)
 - Primarily affects inverters without VPP V2.01 protocol extended register support
 - Fixes compatibility regression introduced in v0.5.0
@@ -1493,12 +1630,14 @@ This release fixes auto-detection timeouts for MIC micro inverters when using Wa
 ### What Was Fixed:
 
 **Problem:** MIC 3000TLX users with Waveshare RS485-ETH adapters reported:
+
 - Integration hangs at "off-grid inverter warning" screen during setup
 - Setup takes ~10 minutes instead of completing immediately
 - Logs show: `No response received after 3 retries` when reading register 30000
 - Integration eventually times out and fails to initialize
 
 **Root Cause:**
+
 - MIC micro inverters use **legacy V3.05 protocol** (registers 0-179 only)
 - Auto-detection was attempting to read VPP 2.01 register 30000 before checking legacy registers
 - MIC doesn't support register 30000, causing long timeout with Waveshare adapters
@@ -1509,16 +1648,17 @@ This release fixes auto-detection timeouts for MIC micro inverters when using Wa
 Added **early legacy register detection** before attempting VPP register reads:
 
 1. **Quick Legacy Check (Step 1.5):**
+
    - Try reading register 3 (PV1 voltage) - exists in most legacy protocols
    - If register 3 responds, check if register 3003 is absent
    - Register 3 present + register 3003 absent = MIC series (0-179 range only)
-
 2. **Skip VPP Detection:**
+
    - Once MIC is detected via legacy registers, skip reading register 30000
    - Prevents long timeout on unsupported VPP registers
    - Detection completes in <1 second instead of ~10 minutes
-
 3. **Detection Order Updated:**
+
    - Step 1: OffGrid DTC (registers 34/43) - SPF detection
    - **Step 1.5: Legacy register check (NEW) - MIC detection**
    - Step 2: VPP DTC (register 30000) - V2.01 inverters
@@ -1526,6 +1666,7 @@ Added **early legacy register detection** before attempting VPP register reads:
    - Step 4: Register probing (fallback)
 
 **Impact:**
+
 - ✅ MIC inverters detected immediately via legacy registers
 - ✅ No timeout on unsupported VPP register 30000
 - ✅ Setup completes in <1 second instead of ~10 minutes
@@ -1537,6 +1678,7 @@ Added **early legacy register detection** before attempting VPP register reads:
 For users with Waveshare RS485-to-ETH adapters, use these settings:
 
 **Connection Parameters:**
+
 - **Baud Rate:** 9600
 - **Data Bits:** 8
 - **Parity:** None
@@ -1552,10 +1694,12 @@ These settings are now documented in the README for reference.
 ### Technical Details:
 
 **Files Changed:**
+
 - `custom_components/growatt_modbus/auto_detection.py:923-945`
 - `README.md:118-131` (added Waveshare configuration guide)
 
 **Detection Logic:**
+
 ```python
 # Before: VPP DTC read first → timeout on MIC
 1. OffGrid DTC → VPP DTC → Model name → Register probing
@@ -1565,6 +1709,7 @@ These settings are now documented in the README for reference.
 ```
 
 **Affected Models:**
+
 - MIC 600-3300TL-X series (all micro inverters using 0-179 register range)
 - Any legacy inverter using V3.05 protocol without VPP 2.01 support
 - Particularly affects users with Waveshare RS485-to-ETH adapters
@@ -1580,11 +1725,13 @@ This release fixes critical sensor issues for SPH inverters including battery se
 ### What Was Fixed:
 
 **Problem:** SPH 3-6kW V2.01 users reporting incorrect battery sensor values (Issue #185):
+
 - Battery SOC showing 0% instead of actual value (e.g., 31%)
 - AC Charge Energy Total showing garbage value (70,516,736 kWh)
 - Battery charge/discharge energy sensors showing incorrect or missing values
 
 **Root Cause:**
+
 - Register 17 (inherited from base profile) returns 0 for SOC on V2.01 inverters
 - Correct SOC value is available in register 1086 (BMS register) but wasn't configured
 - Battery energy registers in VPP range (31202-31209) were incorrectly mapped
@@ -1593,23 +1740,25 @@ This release fixes critical sensor issues for SPH inverters including battery se
 **The Fix:**
 
 1. **Added Correct Battery SOC Register:**
+
    - Added register 1086 for `battery_soc` in SPH 3-6kW V2.01 profile
    - Overrides inherited register 17 which returns 0
    - Provides accurate SOC value directly from BMS
-
 2. **Fixed Battery Energy Register Mappings:**
+
    - Changed registers 31202-31203 from power to discharge_today energy
    - Added registers 31204-31205 for battery_charge_total
    - Added registers 31206-31207 for battery_charge_today
    - Added registers 31208-31209 for battery_discharge_total
    - All battery energy tracking now accurate
-
 3. **Fixed AC Charge Energy Total:**
+
    - Removed incorrect 32-bit pairing of registers 31220-31221
    - Added register 115 for `ac_charge_energy_total`
    - Prevents garbage value of 70,516,736 kWh
 
 **Impact:**
+
 - ✅ Battery SOC now shows correct value (e.g., 31% instead of 0%)
 - ✅ AC Charge Energy Total shows realistic value (e.g., 7.8 kWh instead of 70M kWh)
 - ✅ Battery charge/discharge energy sensors now accurate
@@ -1624,11 +1773,13 @@ This release fixes incorrect grid import energy values for SPH-TL3 inverters whe
 ### What Was Fixed:
 
 **Problem:** SPH-TL3 users reporting incorrect grid import energy:
+
 - Grid import energy showing values that decrease when solar production starts
 - Calculated values significantly different from actual grid consumption
 - Energy meters not reflecting true grid import
 
 **Root Cause:**
+
 - SPH-TL3 has hardware registers for grid import energy (energy_to_user_today at 1044-1045 and energy_to_user_total at 1046-1047)
 - Code was checking for energy_from_grid_today/total which don't exist on SPH-TL3
 - This caused fallback to calculation: `import = load - solar + export`
@@ -1640,21 +1791,23 @@ This release fixes incorrect grid import energy values for SPH-TL3 inverters whe
 Modified sensor.py to check for energy_to_user_today/total registers and use them directly when available:
 
 1. **Added Hardware Register Support:**
+
    - Check for registers 1044-1045 (`energy_to_user_today`) for daily grid import
    - Check for registers 1046-1047 (`energy_to_user_total`) for total grid import
    - Use hardware meter readings directly instead of calculation
-
 2. **Improved CT Clamp Handling:**
+
    - Normal orientation + hardware register: use energy_to_user directly
    - CT clamp backwards + hardware register: use energy_to_grid (swapped)
    - No hardware register available: fall back to calculation (MIN series, etc.)
-
 3. **Accurate Grid Import Tracking:**
+
    - Values now come directly from hardware meter
    - No dependency on PV production or battery discharge calculations
    - Grid import energy never decreases incorrectly
 
 **Impact:**
+
 - ✅ SPH-TL3 grid import energy now accurate from hardware registers
 - ✅ Values stable and don't decrease when solar production starts
 - ✅ Proper handling of CT clamp orientation (normal vs backwards)
@@ -1686,10 +1839,12 @@ Modified sensor.py to check for energy_to_user_today/total registers and use the
 ### Technical Details:
 
 **Files Changed:**
+
 - `custom_components/growatt_modbus/profiles/sph.py` (SPH 3-6kW battery sensors)
 - `custom_components/growatt_modbus/sensor.py` (SPH-TL3 grid energy calculation)
 
 **SPH 3-6kW Battery Fix - Registers Added/Modified:**
+
 - 1086: `battery_soc` (overrides register 17)
 - 115: `ac_charge_energy_total` (replaces incorrect 31220-31221 pair)
 - 31202-31203: `battery_discharge_today` (was incorrectly mapped as power)
@@ -1698,11 +1853,13 @@ Modified sensor.py to check for energy_to_user_today/total registers and use the
 - 31208-31209: `battery_discharge_total` (newly added)
 
 **SPH-TL3 Grid Energy Fix - Registers Used:**
+
 - 1044-1045: `energy_to_user_today` (daily grid import from hardware meter)
 - 1046-1047: `energy_to_user_total` (total grid import from hardware meter)
 - Fallback calculation for inverters without hardware registers (MIN series, etc.)
 
 **Affected Models:**
+
 - **Battery sensor fix:** SPH 3000-6000 (V2.01 protocol only)
 - **Grid energy fix:** SPH-TL3 (all versions with hardware meter registers)
 - Does not affect SPH 7-10kW or other SPH models
@@ -1753,22 +1910,26 @@ This release fixes a critical bug in the diagnostic scanner that caused incorrec
 ### What Was Fixed:
 
 **Problem:** Diagnostic scanner incorrectly overriding DTC-based detection with register-based detection:
+
 - DTC code would correctly identify inverter model (e.g., DTC 3501 = SPH 3-6kW)
 - Register-based detection would then override with wrong model (e.g., SPH 8-10kW HU)
 - Users ended up with wrong profile selection, causing missing or incorrect sensors
 
 **Root Cause:**
+
 - Diagnostic scanner performed DTC detection first
 - Then continued to register-based detection logic
 - Register-based detection would override correct DTC mapping
 - Example: SPH 3-6kW V2.01 has storage range (1000+) which triggered HU detection
 
 **The Fix:**
+
 - Added early exit after successful DTC detection
 - Register-based detection now only runs if DTC detection fails
 - DTC detection takes priority as most reliable method
 
 **Impact:**
+
 - ✅ DTC 3501 (SPH 3-6kW) now correctly suggests `sph_3000_6000_v201` instead of `sph_8000_10000_hu`
 - ✅ All VPP 2.01 inverters with valid DTC codes get correct profile suggestions
 - ✅ Battery sensors work correctly with proper profile
@@ -1778,6 +1939,7 @@ This release fixes a critical bug in the diagnostic scanner that caused incorrec
 If you previously ran the diagnostic scanner and it suggested the **wrong profile**, you need to update your configuration:
 
 **Symptoms of wrong profile:**
+
 - Missing battery sensors
 - Incorrect power readings
 - Diagnostic showed different model than what you selected
@@ -1795,6 +1957,7 @@ If you previously ran the diagnostic scanner and it suggested the **wrong profil
 4. **Restart Home Assistant**
 
 **Common Corrections:**
+
 - DTC 3501/3502: Change from `SPH 8-10kW HU` → `SPH 3-6kW (V2.01)`
 - DTC 3501/3502: Change from `SPH 7-10kW` → `SPH 3-6kW (V2.01)`
 
@@ -1803,6 +1966,7 @@ If you previously ran the diagnostic scanner and it suggested the **wrong profil
 **File Changed:** `diagnostic.py`
 
 **Code Added:**
+
 ```python
 # If DTC detected model, skip other detection logic
 if detection["confidence"] == "Very High":
@@ -1812,6 +1976,7 @@ if detection["confidence"] == "Very High":
 This ensures DTC-based detection (confidence = "Very High") takes priority and prevents register-based detection from overriding the correct profile.
 
 **Affected DTC Codes:**
+
 - 3501, 3502, 3735 (SPH/SPA 3-6kW)
 - 3601, 3725 (SPH/SPA TL3)
 - 5100 (TL-XH)
@@ -1828,12 +1993,14 @@ This ensures DTC-based detection (confidence = "Very High") takes priority and p
 This release combines all improvements from beta versions (v0.4.9b1-b4) plus additional bug fixes.
 
 **Fixed:**
+
 - Battery power sign inversion for VPP protocol registers (1013-1014 swapped)
 - Missing energy and battery registers in SPH V2.01 profiles (Issue #176)
 - Multiple inverters on same IP rejected with "already configured" (Issue #179)
 - SPH TL3 Energy Today showing AC output instead of PV production (Issue #172)
 
 **Added:**
+
 - Multi-register write support for advanced Modbus operations
 - WIT VPP battery control entities and services (PR #171)
 - WIT VPP export limitation controls (30200/30201 registers, PR #175)
@@ -1849,17 +2016,20 @@ This release combines all improvements from beta versions (v0.4.9b1-b4) plus add
 ### 1. 🔋 Fixed Battery Power Sign for VPP Protocol Registers
 
 **Problem:** VPP protocol inverters (WIT, SPH V2.01) showing inverted battery power signs:
+
 - Battery charging (power should be positive) showed negative values
 - Battery discharging (power should be negative) showed positive values
 - Caused confusion in energy monitoring and automation
 
 **Root Cause:**
+
 - VPP protocol stores battery power in registers 1013-1014 in **swapped order**
 - Register 1013: Low word (W)
 - Register 1014: High word (kW)
 - Integration was reading them as 1014+1013 (reversed), causing sign inversion
 
 **The Fix:**
+
 - Registers 1013-1014 now read in correct order for VPP protocol profiles
 - Battery power signs now match physical behavior:
   - **Positive = Charging** (power going INTO battery)
@@ -1867,6 +2037,7 @@ This release combines all improvements from beta versions (v0.4.9b1-b4) plus add
 - Affects: WIT, SPH V2.01, and other VPP protocol inverters
 
 **Impact:**
+
 - ✅ Battery power values now show correct sign
 - ✅ Automation triggers work as expected
 - ✅ Energy flow visualization accurate
@@ -1874,11 +2045,13 @@ This release combines all improvements from beta versions (v0.4.9b1-b4) plus add
 ### 2. 🔋 Added Missing Registers to SPH V2.01 Profiles (Issue #176)
 
 **Added to SPH V2.01:**
+
 - Battery registers: SOC, voltage, current, power, temperature, discharge limits
 - Energy registers: Battery charge/discharge energy (today & total)
 - Complete battery monitoring for SPH inverters using VPP protocol
 
 **Impact:**
+
 - ✅ SPH V2.01 users now have full battery monitoring
 - ✅ Battery charge/discharge energy tracking available
 - ✅ Complete parity with SPH TL3 legacy profile features
@@ -1886,18 +2059,22 @@ This release combines all improvements from beta versions (v0.4.9b1-b4) plus add
 ### 3. 🔧 Fixed Unique ID Collision for Multiple Inverters (Issue #179)
 
 **Problem:** Multiple inverters on same IP (different ports) could not be configured:
+
 - Common with Modbus proxy/gateway setups
 - Second inverter rejected: "This inverter is already configured"
 
 **Root Cause:**
+
 - TCP unique ID format was: `{host}_{slave_id}` (ignored port number)
 - Multiple inverters on same IP with different ports generated identical unique IDs
 
 **The Fix:**
+
 - Changed TCP unique ID format to: `{host}:{port}_{slave_id}`
 - Example: `192.168.168.4:5021_1` vs `192.168.168.4:5022_1`
 
 **Impact:**
+
 - ✅ Multiple inverters on same IP with different ports now supported
 - ✅ Modbus proxy/gateway setups work correctly
 - ✅ Still prevents true duplicates (same IP+port+slave_id)
@@ -1905,15 +2082,18 @@ This release combines all improvements from beta versions (v0.4.9b1-b4) plus add
 ### 4. 🔧 Fixed SPH TL3 Energy Today (Issue #172)
 
 **Problem:** SPH TL3 "Energy Today" showing AC output instead of true PV production:
+
 - DC-coupled battery charging excluded from total
 - Reported values significantly lower than actual solar production
 
 **The Fix:**
+
 - Added per-MPPT PV energy registers (59-60, 63-64, 91-92) to SPH TL3 profile
 - Energy Today now calculated as: **PV1 + PV2** (true solar production)
 - Same fix previously applied to WIT profile in v0.4.7
 
 **Impact:**
+
 - ✅ Energy Today shows accurate total PV production
 - ✅ Values include DC-coupled battery charging
 - ✅ Consistent with WIT behavior
@@ -1921,11 +2101,13 @@ This release combines all improvements from beta versions (v0.4.9b1-b4) plus add
 ### 5. ✨ Multi-Register Write Support (PR #168)
 
 **Added:** Ability to write multiple registers in a single Modbus transaction
+
 - New `write_multiple_registers` method in GrowattModbus class
 - Improved error reporting with detailed Modbus exception handling
 - Atomic multi-register writes for complex settings
 
 **Use Cases:**
+
 - Setting TOU schedules (multiple time/power registers)
 - Batch configuration updates
 - Advanced inverter programming
@@ -1933,12 +2115,14 @@ This release combines all improvements from beta versions (v0.4.9b1-b4) plus add
 ### 6. 🎯 WIT VPP Battery Control Enhancements (PR #171)
 
 **Added:**
+
 - WIT VPP battery control entities (charge/discharge power, duration)
 - Service handlers for programmatic battery control
 - Remote control enable/disable functionality
 - Integration with VPP protocol time-limited overrides
 
 **New Entities:**
+
 - Remote Power Control Enable (register 30407)
 - Remote Charging Time (register 30408, duration in minutes)
 - Remote Charge/Discharge Power (register 30409, -100% to +100%)
@@ -1946,11 +2130,13 @@ This release combines all improvements from beta versions (v0.4.9b1-b4) plus add
 ### 7. 🎯 WIT VPP Export Limitation (PR #175)
 
 **Added:**
+
 - VPP export limitation control registers (30200/30201)
 - Enable/disable export limiting
 - Set maximum export power to grid
 
 **Use Cases:**
+
 - Comply with grid connection agreements
 - Prevent export during peak pricing
 - Dynamic export control based on conditions
@@ -1958,6 +2144,7 @@ This release combines all improvements from beta versions (v0.4.9b1-b4) plus add
 ### 8. 📊 WIT VPP V2.03 Register Additions (PR #169)
 
 **Added:**
+
 - TOU (Time of Use) schedule registers
 - SOC (State of Charge) limit registers
 - System time registers
@@ -1966,6 +2153,7 @@ This release combines all improvements from beta versions (v0.4.9b1-b4) plus add
 ### 9. 🔌 Grid Power Sensor Improvement (PR #170)
 
 **Changed:** Grid power calculation now uses `power_to_user` register
+
 - More accurate grid import/export measurements
 - Better handling of CT clamp configurations
 - Improved power flow calculations
@@ -1973,6 +2161,7 @@ This release combines all improvements from beta versions (v0.4.9b1-b4) plus add
 ### 10. 🛠️ Enhanced Services and Diagnostics
 
 **Added:**
+
 - `get_register_data` service for programmatic register reads
 - Holding registers now included in register scan CSV output
 - Better integration with automation and scripts
@@ -1984,23 +2173,28 @@ This release combines all improvements from beta versions (v0.4.9b1-b4) plus add
 **No action required** - This is a bug fix and enhancement release.
 
 **For VPP Protocol Users (WIT, SPH V2.01):**
+
 - Battery power signs will flip after upgrade (this is the fix - values are now correct)
 - **Positive = Charging**, **Negative = Discharging**
 - Update any automations that relied on the incorrect sign behavior
 
 **For SPH TL3 Users:**
+
 - Energy Today values will increase (now showing true PV production)
 - Dashboard graphs may show a step change (expected - previous values were too low)
 
 **For SPH V2.01 Users:**
+
 - Battery sensors will now appear after upgrade
 - Full battery monitoring now available
 
 **For Multi-Inverter Setups (Issue #179):**
+
 - If you couldn't add a second inverter on same IP, try adding it again after upgrade
 - Both inverters will now configure successfully
 
 **For WIT Users:**
+
 - New battery control and export limitation features available
 - See PR documentation for usage examples
 - Rate limiting (30s cooldown) applies to control writes
@@ -2010,6 +2204,7 @@ This release combines all improvements from beta versions (v0.4.9b1-b4) plus add
 ## Files Changed:
 
 Core functionality:
+
 - `custom_components/growatt_modbus/growatt_modbus.py` - Battery power sign fix, multi-register write support, enhanced services
 - `custom_components/growatt_modbus/config_flow.py` - Updated TCP unique_id format
 - `custom_components/growatt_modbus/services.yaml` - Added get_register_data service
@@ -2017,11 +2212,13 @@ Core functionality:
 - `custom_components/growatt_modbus/diagnostic.py` - Enhanced register scanning
 
 Profile updates:
+
 - `custom_components/growatt_modbus/profiles/sph_tl3.py` - Added per-MPPT energy registers
 - `custom_components/growatt_modbus/profiles/sph_v201.py` - Added battery and energy registers
 - `custom_components/growatt_modbus/profiles/wit.py` - VPP control registers, export limitation
 
 Version bump:
+
 - `custom_components/growatt_modbus/manifest.json` - Version 0.4.9
 - `README.md` - Version badge updated to 0.4.9
 - `RELEASENOTES.md` - Updated with v0.4.9 changes
@@ -2033,6 +2230,7 @@ Version bump:
 ## 🔧 Bug Fix - Multiple Inverters on Same IP
 
 **Fixed (Issue #179):**
+
 - Multiple inverters on the same IP address (different ports) could not be configured
 - Integration rejected second inverter with "This inverter is already configured"
 - Common scenario with Modbus proxies/gateways exposing multiple inverters
@@ -2046,11 +2244,13 @@ Version bump:
 **Problem:** Users with multiple inverters behind a Modbus proxy or gateway (same IP, different ports) could only configure one inverter. The second would fail with "This inverter is already configured."
 
 **Root Cause:**
+
 - TCP unique ID format was: `{host}_{slave_id}`
 - Ignored the port number completely
 - Multiple inverters on same IP with different ports generated identical unique IDs
 
 **User Case (Issue #179):**
+
 - Setup: 2 inverters → Waveshare → evcc → ModbusProxy
 - SPH 10k TL3 BH-UP: `192.168.168.4:5021` (slave 1)
 - MOD 10k TL3-XH: `192.168.168.4:5022` (slave 1)
@@ -2060,16 +2260,19 @@ Version bump:
 **The Fix:**
 
 Changed TCP unique ID format to include port number:
+
 - **Old format:** `{host}_{slave_id}` (e.g., `192.168.168.4_1`)
 - **New format:** `{host}:{port}_{slave_id}` (e.g., `192.168.168.4:5021_1`)
 
 **Impact:**
+
 - ✅ Multiple inverters on same IP with different ports now supported
 - ✅ Common Modbus proxy/gateway setups now work correctly
 - ✅ Still prevents true duplicates (same IP+port+slave_id)
 - ✅ Serial connections unchanged
 
 **Example - Now Works:**
+
 ```
 Configuration:
   SPH 10k TL3:  192.168.168.4:5021 slave_id=1 → unique_id: 192.168.168.4:5021_1 ✅
@@ -2087,12 +2290,14 @@ Still Blocks Duplicates:
 **No action required for existing single-inverter setups** - unique IDs will update automatically.
 
 **For Multi-Inverter Setups (Issue #179):**
+
 - If you previously couldn't add a second inverter on the same IP:
   1. Upgrade to v0.4.9b4
   2. Try adding the second inverter again
   3. Both inverters will now configure successfully
 
 **Technical Note:**
+
 - Existing integrations will get new unique IDs on next restart
 - Home Assistant handles unique ID changes automatically
 - No need to remove/re-add existing integrations
@@ -2100,6 +2305,7 @@ Still Blocks Duplicates:
 ---
 
 ### Files Changed:
+
 - `custom_components/growatt_modbus/config_flow.py` - Updated TCP unique_id format to include port
 - `custom_components/growatt_modbus/manifest.json` - Version bump to 0.4.9b4
 - `README.md` - Version badge updated to 0.4.9b4
@@ -2112,6 +2318,7 @@ Still Blocks Duplicates:
 ## 🔧 Bug Fix - SPH TL3 Energy Today Incorrect Values
 
 **Fixed (Issue #172):**
+
 - SPH TL3 "Energy Today" sensor showing AC output energy instead of true PV solar production
 - On hybrid inverters with batteries, DC-coupled battery charging was excluded from the total
 
@@ -2124,11 +2331,13 @@ Still Blocks Duplicates:
 **Problem:** SPH TL3 users reported "Energy Today" showing significantly lower values than actual solar production. For example, a user producing ~8.1 kWh saw only 1.5-2.6 kWh reported.
 
 **Root Cause:**
+
 - Registers 53-54 (`energy_today`) on SPH TL3 measure **total AC output energy** (what goes to grid/loads)
 - On hybrid inverters with batteries, energy that goes directly from PV to battery via DC coupling **bypasses the AC side** and is NOT counted in registers 53-54
 - This means the "Energy Today" sensor was underreporting by the amount of DC-coupled battery charging
 
 **User Case:**
+
 - SPH TL3 inverter with battery
 - Register 54 = 15 → 1.5 kWh (AC output only)
 - Registers 60 (PV1) + 64 (PV2) = actual total PV production (~8.1 kWh)
@@ -2137,22 +2346,25 @@ Still Blocks Duplicates:
 **The Fix:**
 
 1. **Added Per-MPPT PV Energy Registers to SPH TL3 Profile:**
+
    - 59-60: `pv1_energy_today` (PV string 1 DC energy production)
    - 63-64: `pv2_energy_today` (PV string 2 DC energy production)
    - 91-92: `pv_energy_total` (lifetime total PV energy from all MPPTs)
-
 2. **Automatic Calculation:**
+
    - Existing code already sums PV1 + PV2 when per-MPPT registers are available
    - `energy_today` now calculated as: **PV1 + PV2** (true solar production)
    - Same approach already working correctly for WIT profile (Issue #146 fix in v0.4.7)
 
 **Impact:**
+
 - Energy Today now shows accurate total PV production (DC input from solar panels)
 - Values include energy going to battery via DC coupling (previously excluded)
 - Energy Total (lifetime) now uses PV energy total register for accuracy
 - Other inverter profiles unaffected (backwards compatible)
 
 **Example - Before vs After:**
+
 ```
 Before (v0.4.9b1):
   Energy Today: 1.5 kWh  (AC output only, missing DC battery charging)
@@ -2168,6 +2380,7 @@ After (v0.4.9b3):
 **No action required** - Fix is automatic after upgrade.
 
 **For SPH TL3 Users:**
+
 - "Energy Today" will now show higher (correct) values that include DC battery charging
 - Dashboard energy graphs may show a one-time step change after upgrade - this is expected
 - Previous values excluded DC-coupled battery charging (incorrect), new values are PV-only production (correct)
@@ -2175,6 +2388,7 @@ After (v0.4.9b3):
 ---
 
 ### Files Changed:
+
 - `custom_components/growatt_modbus/profiles/sph_tl3.py` - Added per-MPPT PV energy registers (59-60, 63-64, 91-92)
 - `custom_components/growatt_modbus/manifest.json` - Version bump to 0.4.9b3
 - `README.md` - Version badge updated to 0.4.9b3
@@ -2187,6 +2401,7 @@ After (v0.4.9b3):
 ## 🔧 Bug Fix - MIC-1000TL-X Auto-Detection
 
 **Fixed (Issue #130):**
+
 - MIC-1000TL-X inverters incorrectly auto-detected as MIN series
 - Manual MIC profile selection showed incorrect/missing values
 
@@ -2197,12 +2412,14 @@ After (v0.4.9b3):
 #### 🔍 Improved MIC vs MIN Detection (Issue #130)
 
 **Problem:**
+
 - DTC code 5200 is shared by both MIC and MIN inverter series
 - Previous logic tested for 3000+ register range to distinguish models
 - Some MIC-1000TL-X inverters use MIN register layout (hybrid design) but are physically MIC hardware
 - This caused incorrect auto-detection and wrong sensor values
 
 **Root Cause:**
+
 - MIC-1000TL-X (2500-6000W range) can use either:
   - Standard MIC layout: 0-179 registers only
   - Hybrid layout: 0-124 + 3000-3124 (MIN addressing) BUT with MIC features
@@ -2211,6 +2428,7 @@ After (v0.4.9b3):
 - If not found → assumed MIC series ✅
 
 **User Case:**
+
 - MIC-1000TL-X with firmware "PV 1000"
 - Has data in BOTH 0-124 AND 3000-3124 ranges (hybrid layout)
 - Previous detection saw 3000+ range → incorrectly selected MIN profile
@@ -2220,11 +2438,12 @@ After (v0.4.9b3):
 **The Fix:**
 
 1. **Hardware-Level Detection:**
+
    - MIC inverters have per-MPPT energy tracking capability (registers 59-62)
    - MIN inverters do NOT have these registers (not a firmware feature - hardware difference)
    - Now test registers 59-62 FIRST before checking register range
-
 2. **New Detection Logic for DTC 5200:**
+
    ```
    Step 1: Read registers 59-62 (PV1/PV2 per-MPPT energy)
 
@@ -2243,8 +2462,8 @@ After (v0.4.9b3):
            → MIN hardware (no per-MPPT capability or garbage data)
            → Use MIN_3000_6000TL_X_V201 profile
    ```
-
 3. **New MIC Profile Created:**
+
    - Profile: `MIC_2500_6000TL_X_MIN_RANGE`
    - Supports hybrid MIC inverters using MIN register addressing
    - Combines:
@@ -2254,6 +2473,7 @@ After (v0.4.9b3):
    - Provides complete sensor coverage for these hybrid models
 
 **Impact:**
+
 - ✅ MIC-1000TL-X correctly auto-detected regardless of register layout
 - ✅ All sensors show correct values
 - ✅ Per-MPPT energy tracking available for MIC users
@@ -2261,6 +2481,7 @@ After (v0.4.9b3):
 - ✅ Reliable hardware-level differentiation (not just register addressing)
 
 **Example - Before vs After:**
+
 ```
 Before (v0.4.7):
   Auto-Detection: MIN 3000-6000TL-X ❌ (wrong - saw 3000+ range)
@@ -2281,6 +2502,7 @@ After (v0.4.8):
 ### Technical Details:
 
 **Register Scan Analysis:**
+
 ```
 MIC-1000TL-X Hybrid Layout (verified):
   Register 11-12: 0 (MIC AC power location - empty)
@@ -2297,6 +2519,7 @@ MIN 3000-6000TL-X (verified):
 ```
 
 **Validation Logic:**
+
 - Energy registers use 32-bit pairs (high word, low word)
 - Valid daily energy: 0-50 kWh → high word typically 0-1
 - Valid lifetime energy: 10,000 kWh → high word ~1-2
@@ -2312,6 +2535,7 @@ MIN 3000-6000TL-X (verified):
 **No action required** - Auto-detection improvement only.
 
 **For Affected MIC-1000TL-X Users (Issue #130):**
+
 - If previously manually selected MIN profile as workaround:
   1. Remove integration
   2. Re-add integration with auto-detection
@@ -2319,6 +2543,7 @@ MIN 3000-6000TL-X (verified):
   4. All sensors (including per-MPPT energy) will appear
 
 **Detection Changes:**
+
 - MIC inverters with hybrid layout now correctly identified
 - All existing MIC and MIN inverters unaffected
 - More robust detection using hardware capabilities instead of register addressing
@@ -2330,10 +2555,12 @@ MIN 3000-6000TL-X (verified):
 ## 🐛 Bug Fix + 📊 Diagnostic Enhancement
 
 **Fixed (Issue #146):**
+
 - WIT "Energy Today" sensor showing incorrect values (total system output instead of PV-only production)
 - WIT "Energy Total" sensor not reflecting actual solar panel production
 
 **Enhanced:**
+
 - Register scan now includes firmware version in metadata output
 
 ---
@@ -2345,39 +2572,45 @@ MIN 3000-6000TL-X (verified):
 **Problem:** WIT users reported "Energy Today" sensor increasing at night when no solar production occurring.
 
 **Root Cause:**
+
 - Registers 53-56 (energy_today/total) track **total system AC output** (PV + battery discharge combined)
 - Not suitable for tracking solar production on hybrid inverters with batteries
 - Values increase whenever battery powers loads, even at night
 
 **User Report:**
+
 - Register 56 showed 6.2 kWh (wrong - total system output)
 - Register 60 (PV1): 4.8 kWh ✅
 - Register 64 (PV2): 2.7 kWh ✅
 - **Actual PV production: 4.8 + 2.7 = 7.5 kWh** ✅
 
 **The Fix:**
+
 1. **Added Missing Registers to WIT Profile:**
+
    - 59-60: PV1 Energy Today (per-MPPT tracking)
    - 63-64: PV2 Energy Today (per-MPPT tracking)
    - 91-92: PV Energy Total (lifetime DC input from all MPPTs)
-
 2. **Added Dataclass Fields:**
+
    - `pv1_energy_today` - PV1 MPPT daily production
    - `pv2_energy_today` - PV2 MPPT daily production
    - `pv_energy_total` - Lifetime PV production
-
 3. **Changed Energy Calculation for WIT:**
+
    - `energy_today` now calculated as: **PV1 + PV2** (true solar production)
    - `energy_total` now uses register 92 (total PV lifetime energy)
    - Fallback to original registers for non-WIT inverters (backwards compatible)
 
 **Impact:**
+
 - ✅ WIT "Energy Today" now shows accurate solar production (not total system output)
 - ✅ Values only increase during daylight when panels are producing
 - ✅ Correctly tracks DC input from solar panels only
 - ✅ Other inverter series unaffected (backwards compatible)
 
 **Example - Before vs After:**
+
 ```
 Before (v0.4.6):
   Energy Today: 6.2 kWh  ❌ (total system including battery)
@@ -2391,11 +2624,13 @@ After (v0.4.7):
 **Added:** Firmware version now included in register scan metadata output.
 
 **How it Works:**
+
 - Reads holding registers 9-11 (firmware version, ASCII encoded)
 - Decodes to human-readable version string
 - Displays in both CSV metadata and notification message
 
 **Example Output:**
+
 ```
 DETECTION ANALYSIS
 Detected Model: WIT 4-15kW Hybrid
@@ -2407,6 +2642,7 @@ Suggested Profile: WIT_4000_15000TL3
 ```
 
 **Impact:**
+
 - ✅ Easier troubleshooting - firmware version visible in scans
 - ✅ Helps identify firmware-specific behaviors
 - ✅ No additional user action required - automatic extraction
@@ -2418,18 +2654,21 @@ Suggested Profile: WIT_4000_15000TL3
 **No action required** - This is a bug fix and enhancement release.
 
 **For WIT Users:**
+
 - "Energy Today" and "Energy Total" sensors will now show correct PV production values
 - **IMPORTANT:** Values may differ from v0.4.6 - this is expected and correct
 - Previous values included battery discharge (wrong), new values are PV-only (correct)
 - Dashboard energy graphs may show a one-time step change after upgrade
 
 **For All Users:**
+
 - Next register scan will include firmware version automatically
 - No changes needed to existing scans
 
 ---
 
 ### Files Changed:
+
 - `custom_components/growatt_modbus/profiles/wit.py` - Added PV energy registers (59-60, 63-64, 91-92) with descriptions
 - `custom_components/growatt_modbus/growatt_modbus.py` - Added PV energy dataclass fields + reading code + smart calculation logic
 - `custom_components/growatt_modbus/diagnostic.py` - Added firmware version reading and display
@@ -2444,11 +2683,13 @@ Suggested Profile: WIT_4000_15000TL3
 ## 🐛 Bug Fixes + 🎯 WIT Control Stability Improvements
 
 **Fixed (Issue #163):**
+
 - SPF AC Charge Energy Today/Total sensors showing 0.00 (should show same values as Battery Charge sensors)
 - SPF AC Discharge Energy Today/Total sensors showing 0.00 (registers 64-67)
 - Noisy WARNING log message for SPF users: "load_energy_today_low register not found"
 
 **Improved (Issue #143):**
+
 - WIT control stability - prevent oscillation and unstable battery behavior
 - WIT control model clarified - VPP protocol vs Legacy protocol differences
 - Rate limiting added to prevent rapid control changes
@@ -2463,28 +2704,33 @@ Suggested Profile: WIT_4000_15000TL3
 **Root Cause:** SPF uses different register names than WIT for the same energy measurements, causing "AC Charge/Discharge Energy" sensors to show 0.00 even though the data exists.
 
 **Register Name Differences:**
+
 - **WIT:** Uses `ac_charge_energy_*` and `ac_discharge_energy_*` register names
 - **SPF:** Uses `charge_energy_*` (56-59) and `ac_discharge_energy_*` (64-67) register names
 - Same data, different naming convention
 
 **Affected sensors (now fixed):**
+
 - `ac_charge_energy_today` - Now populated from SPF's `charge_energy_today` (registers 56-57)
 - `ac_charge_energy_total` - Now populated from SPF's `charge_energy_total` (registers 58-59)
 - `ac_discharge_energy_today` - Now reads from registers 64-65
 - `ac_discharge_energy_total` - Now reads from registers 66-67
 
 **The Fix:**
+
 1. **AC Charge Energy**: SPF now populates BOTH `charge_energy_*` AND `ac_charge_energy_*` fields from the same registers (56-59)
 2. **AC Discharge Energy**: Added missing register reading code for registers 64-67
 3. **WIT compatibility**: WIT-specific register names still work for WIT inverters
 
 **Impact:**
+
 - ✅ SPF users will now see actual values in ALL "AC Charge/Discharge Energy" sensors
 - ✅ "AC Charge Energy" sensors will match "Battery Charge" sensors (same data source)
 - ✅ "AC Discharge Energy" sensors will show battery → load energy flow
 - ✅ Complete energy tracking for SPF 6000 ES Plus and similar models
 
 **What You'll See After Upgrade (SPF users):**
+
 - "Battery Charge Today" = 0.80 kWh ✅ (working before)
 - "AC Charge Energy Today" = 0.80 kWh ✅ (NOW FIXED - was 0.00)
 - "Battery Charge Total" = 446.90 kWh ✅ (working before)
@@ -2498,9 +2744,9 @@ Suggested Profile: WIT_4000_15000TL3
 
 **Issue:** SPF users (and other off-grid models) saw constant WARNING messages in Home Assistant logs:
 
-    [SPF 3000-6000 ES PLUS@/dev/ttyACM0] load_energy_today_low register not found
-
+[SPF 3000-6000 ES PLUS@/dev/ttyACM0] load_energy_today_low register not found
 **Root Cause:** The `load_energy_today` register is specific to **grid-tied inverters** (SPH/MIN/MID/MAX) that track energy consumed from grid by loads. **Off-grid inverters** like SPF don't have this register because they use different energy tracking:
+
 - `ac_discharge_energy_*` - Battery → loads via inverter
 - `op_discharge_energy_*` - Operational discharge energy
 
@@ -2509,6 +2755,7 @@ The code was logging this as a WARNING even though it's expected and harmless fo
 **The Fix:** Changed log level from WARNING to DEBUG with clarifying message: "register not found (expected for off-grid models like SPF)"
 
 **Impact:**
+
 - ✅ SPF users will no longer see noisy warnings in logs
 - ✅ Debug logging still available if needed for troubleshooting
 - ✅ No functional changes - purely cosmetic log improvement
@@ -2518,6 +2765,7 @@ The code was logging this as a WARNING even though it's expected and harmless fo
 **Problem:** WIT users experiencing power oscillation, charge/discharge looping, and unstable control behavior when using battery management features.
 
 **Root Cause:** WIT inverters use **VPP (Virtual Power Plant) protocol** with fundamentally different control model:
+
 - **WIT**: Time-limited overrides (NOT persistent mode changes like SPH/SPF)
 - Register 30476 (`priority_mode`) is **READ-ONLY** on WIT - shows TOU default, cannot be changed via Modbus
 - Proper control requires VPP remote registers (30407-30409) with duration-based commands
@@ -2526,25 +2774,26 @@ The code was logging this as a WARNING even though it's expected and harmless fo
 **The Fixes:**
 
 1. **Register 30476 Marked Read-Only**
+
    - WIT profile now correctly marks `priority_mode` (30476) as `'access': 'R'`
    - Prevents users from trying to write to read-only register
    - Description updated to clarify VPP control model
    - Users guided to use proper VPP remote control instead
-
 2. **30-Second Rate Limiting**
+
    - All WIT control writes now have 30-second cooldown
    - Prevents rapid automation loops that cause oscillation
    - Applies to registers: 201, 202, 203, 30100, 30407, 30408, 30409
    - Warning logged if write blocked: "Rate limit: WIT control writes must be 30s apart"
    - Gives inverter time to respond and stabilize
-
 3. **Control Conflict Detection**
+
    - Detects multiple VPP remote controls active simultaneously
    - Warns when TOU schedule conflicts with remote control
    - Logs warnings to Home Assistant logs
    - Helps users identify problematic automation patterns
-
 4. **Comprehensive WIT Control Guide**
+
    - New documentation: `docs/WIT_CONTROL_GUIDE.md`
    - Explains VPP vs Legacy protocol differences
    - Shows proper WIT control patterns with examples
@@ -2553,6 +2802,7 @@ The code was logging this as a WARNING even though it's expected and harmless fo
    - Troubleshooting guide for common issues
 
 **Impact:**
+
 - ✅ WIT users can now implement stable battery control
 - ✅ Oscillation and looping behavior prevented
 - ✅ Clear guidance on proper VPP remote control usage
@@ -2560,6 +2810,7 @@ The code was logging this as a WARNING even though it's expected and harmless fo
 - ✅ Rate limiting prevents automation mistakes
 
 **WIT Control Registers (Rate Limited):**
+
 - 201: Active Power Rate (Legacy VPP)
 - 202: Work Mode (Legacy VPP)
 - 203: Export Limit (W)
@@ -2569,6 +2820,7 @@ The code was logging this as a WARNING even though it's expected and harmless fo
 - 30409: Remote Charge/Discharge Power (-100% to +100%)
 
 **For WIT Users:**
+
 - **Read the guide**: See `docs/WIT_CONTROL_GUIDE.md` for proper control patterns
 - **Use VPP remote control**: Don't try to write to register 30476
 - **Set durations**: All overrides should specify time duration (register 30408)
@@ -2580,16 +2832,19 @@ The code was logging this as a WARNING even though it's expected and harmless fo
 ### Migration Notes:
 
 **No action required** - This is a bug fix and improvement release. Simply upgrade and:
+
 - SPF AC Charge/Discharge Energy sensors will show correct values
 - Log warnings for missing load_energy_today register will disappear
 - WIT control writes will have automatic rate limiting
 
 **For SPF users:**
+
 - All four AC Charge/Discharge Energy sensors will now work
 - "AC Charge Energy" sensors will show identical values to "Battery Charge" sensors (expected behavior)
 - Log noise from missing grid-tied registers eliminated
 
 **For WIT users:**
+
 - **IMPORTANT:** Read `docs/WIT_CONTROL_GUIDE.md` if you use battery control features
 - Control writes now have 30s cooldown (prevents oscillation - this is intentional)
 - Register 30476 (priority_mode) is now correctly marked read-only
@@ -2597,16 +2852,17 @@ The code was logging this as a WARNING even though it's expected and harmless fo
 - Check logs for rate limit warnings and control conflict warnings
 
 **Debug logging setup** (optional, for troubleshooting):
+
 ```yaml
 logger:
   default: info
   logs:
     custom_components.growatt_modbus: debug
 ```
-
 ---
 
 ### Files Changed:
+
 - `custom_components/growatt_modbus/growatt_modbus.py` - Added AC charge/discharge energy register mapping for SPF + reduced log noise + WIT rate limiting + conflict detection
 - `custom_components/growatt_modbus/profiles/wit.py` - Marked priority_mode as read-only + added VPP control model documentation
 - `docs/WIT_CONTROL_GUIDE.md` - NEW: Comprehensive WIT control guide with examples and troubleshooting
@@ -2621,6 +2877,7 @@ logger:
 ## 🔥 CRITICAL Bug Fix: Serial Connection File Descriptor Leak
 
 **Fixed:**
+
 - **CRITICAL:** Serial connection file descriptor leak causing permanent integration failure after overnight offline periods
 
 ---
@@ -2632,6 +2889,7 @@ logger:
 **Root Cause:** When using USB-RS485 adapters (serial connection), failed connection attempts during offline periods (e.g., overnight when inverter is powered down) were not properly releasing the serial port file descriptor. Over hours of offline polling, hundreds of leaked file descriptors would accumulate until the system exhausted its limit.
 
 **Symptoms:**
+
 - Integration works fine initially
 - Inverter goes offline (night time, powered down)
 - After several hours, integration stops working completely
@@ -2642,11 +2900,13 @@ logger:
 
 **Technical Details:**
 The coordinator's `_fetch_data()` method had three critical flaws:
+
 1. **No cleanup on failed connection** - When `connect()` failed, `disconnect()` was never called to release the serial port
 2. **No cleanup before retry** - Each retry attempt would call `connect()` without first calling `disconnect()`, potentially creating multiple open file descriptors
 3. **Silent exception handling** - Bare `except: pass` blocks hid disconnect failures
 
 **Scenario Example:**
+
 - Inverter offline 5pm-5am (12 hours)
 - Offline polling every 300s = ~144 poll attempts
 - Each attempt tries 3 connection retries = ~432 connection attempts
@@ -2655,23 +2915,27 @@ The coordinator's `_fetch_data()` method had three critical flaws:
 - Integration permanently broken until HA restart
 
 **The Fix:**
+
 1. **Always disconnect before connect** - Ensures clean state, prevents double-open
 2. **Always disconnect after failed connect** - Releases file descriptors even on failure
 3. **Proper error logging** - Replace bare `except: pass` with debug logging
 4. **Connection state checking** - Skip `connect()` if already connected (prevents double-open)
 
 **Files Changed:**
+
 - `coordinator.py:482-537` - Added disconnect calls before/after every connect attempt
 - `growatt_modbus.py:330-350` - Added `is_socket_open()` check to prevent double-connect
 - `growatt_modbus.py:351-364` - Enhanced disconnect error logging with critical error detection
 
 **Impact:**
+
 - ✅ **ALL Serial/USB-RS485 users (ALL inverter models):** Integration now properly recovers from overnight offline periods
 - ✅ **TCP users:** Not affected by the bug, but benefits from cleaner connection management
 - ✅ **All inverter series (MIN/MID/MAX/MOD/SPH/SPF/WIT/MIX/SPA):** No more permanent failures when using serial connections
 - ✅ **Logging:** Better visibility into connection lifecycle and resource leak issues
 
 **Migration Notes:**
+
 - No action required - fix is automatic
 - If you experienced this issue, upgrade to v0.4.5 and restart Home Assistant once
 - Monitor logs after upgrade - should see `Disconnected successfully` debug messages
@@ -2680,6 +2944,7 @@ The coordinator's `_fetch_data()` method had three critical flaws:
 ---
 
 ### Files Changed:
+
 - `custom_components/growatt_modbus/coordinator.py` - Fixed file descriptor leak in _fetch_data()
 - `custom_components/growatt_modbus/growatt_modbus.py` - Enhanced connect/disconnect with leak prevention
 - `custom_components/growatt_modbus/manifest.json` - Version bump to 0.4.5
