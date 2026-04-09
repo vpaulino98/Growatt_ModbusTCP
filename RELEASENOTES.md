@@ -4,73 +4,67 @@
 
 ---
 
-## v0.6.9
+## v0.7.0
 
-Issues: #174 · #131 · #240 · #243
+Issues: #174 · #131 · #212 · #225 · #240 · #243 · #244 · #247
 
 ---
 
 ### Fixes
 
+- **SPH TL3 — Energy Today drop at sunset fixed (#225):** Per-MPPT energy registers
+  (`pv1/2/3_energy_today`) are now used whenever any string has accumulated energy today,
+  regardless of whether PV voltage/power is currently non-zero. Previously the data source
+  switched to register 54 (AC output total, which includes battery discharge) at the moment
+  PV production stopped, causing a visible drop of ~2 kWh at end of day. The per-MPPT sum
+  is now held through the night and cleared at dawn when the inverter resets its registers.
+
+- **WIT 8K-HU — Battery voltage wrong value fixed (#247):** VPP register 31214
+  (`battery_voltage_vpp`, mapped to `battery_voltage`) reports a spuriously low value
+  (e.g. 5.2 V) on some WIT firmware variants while the native register 8034 carries the
+  correct reading (53.7 V). The integration now applies the same multi-candidate
+  selection strategy already used for battery current: all available voltage registers are
+  read, values outside the plausible range (10–800 V) are discarded, and the highest
+  remaining candidate is selected. This resolves the secondary symptom too — battery power
+  scale auto-detection was failing because V×I ≈ 1 W never exceeded the 50 W threshold.
+
 - **SPF — Battery Power always zero fixed (#174):** The `_validate_spf_battery_power_sign`
-  function (introduced to correct intermittent sign errors during PV charging) referenced
-  `data.inverter_status`, which does not exist as a `GrowattData` field. The correct field is
-  `data.status`. The resulting `AttributeError` was silently caught by the battery data
-  exception handler, preventing `charge_power` and `discharge_power` from ever being assigned
-  — leaving `battery_power` permanently at 0W regardless of actual activity.
+  function referenced `data.inverter_status`, which does not exist as a `GrowattData` field.
+  The correct field is `data.status`. The `AttributeError` was silently caught by the battery
+  data exception handler, leaving `battery_power` permanently at 0W.
 
-### MID Series — New Sensors (#240)
+- **SPH Hybrid — Load First Battery Minimum SOC display bugfix (#244):** Corrected reading
+  and display of the Load First SOC value introduced in v0.6.8.
 
-The MID profile was missing a large block of registers that the hardware has responded to all
-along. The following sensors are now available on MID (both legacy and V2.01 variants):
+### New Sensors & Profile Updates
 
-- **Grid power flow:** `power_to_grid`, `power_to_user`, `power_to_load` (registers 3041–3046)
-- **Grid energy counters:** `energy_to_grid_today`, `energy_to_grid_total`,
-  `energy_to_user_today`, `energy_to_user_total` (registers 3067–3074)
-- **Load energy counters:** `load_energy_today`, `load_energy_total` (registers 3075–3078)
-- **VPP load power fallback:** register 31118/31119 added to V2.01 profile
+- **MID Series — Grid, load energy and battery sensors (#240):** The MID profile was missing
+  a large block of registers that the hardware responds to. Now available on both legacy and
+  V2.01 variants:
+  - **Grid power flow:** `power_to_grid`, `power_to_user`, `power_to_load` (regs 3041–3046)
+  - **Grid energy counters:** `energy_to_grid_today/total`, `energy_to_user_today/total`
+    (regs 3067–3074)
+  - **Load energy counters:** `load_energy_today`, `load_energy_total` (regs 3075–3078)
+  - `grid_energy_today` now reads directly from register 3071/3072 instead of a calculation
+    that collapsed to zero when load energy was unavailable
+  - V2.01 profile gains full battery support (31200+ VPP range, confirmed responding):
+    voltage (31214, 404.8 V confirmed), SOC (31217), current (31215/31216), temperature
+    (31222/31223), SOH (31218), power (31200/31201), charge/discharge energy (31202–31209)
+  - `has_battery` is now `True` for `mid_15000_25000tl3_x_v201`
 
-As a result `grid_energy_today` now reads directly from hardware (registers 3071/3072) rather
-than being estimated from a calculation that collapsed to zero when load energy was unavailable.
+- **SPH / TL-XH — Accurate lifetime PV generation (#243):** Registers 91/92
+  (`Epv_total H/L`, Growatt V1.39 protocol) added to SPH and TL-XH profiles. This is the
+  raw DC-side cumulative generation shown in ShinePhone as "Total Power Generation" and is
+  more reliable for the HA energy dashboard than `energy_total` (regs 55/56), which is a
+  net calculated value that can drift with battery cycling. MOD, WIT, and SPH-TL3 already
+  had these registers; MIC and SPF use 91/92 for other purposes and are unchanged.
 
-The V2.01 profile additionally gains full battery support via the 31200+ VPP range (confirmed
-responding in issue #240 scan):
+- **SPH — Export Limit Registers Added (#131):** Holding registers 122 (`export_limit_mode`,
+  0=Disabled/1=RS485) and 123 (`export_limit_power`, ×0.1 %) were missing from SPH 3-6kW
+  and 7-10kW profiles. Now defined in both base profiles and inherited by all V2.01 variants.
 
-- **Battery voltage** (31214, 404.8V confirmed), **Battery SOC** (31217), **Battery current**
-  (31215/31216), **Battery temperature** (31222/31223), **Battery SOH** (31218),
-  **Battery power** (31200/31201), **charge/discharge energy** (31202–31209)
-
-`has_battery` is now `True` for `mid_15000_25000tl3_x_v201`.
-
-### PV Energy Total — Accurate Lifetime Generation (#243)
-
-Registers 91/92 (`Epv_total H/L` per Growatt V1.39 protocol) contain the raw DC-side
-cumulative generation from the PV array. This is the value shown as "Total Power Generation"
-in ShinePhone and is the correct source for the HA energy dashboard.
-
-The previously used `energy_total` (registers 55/56) is a net calculated value that can drift
-with battery cycling, making it unreliable as a long-term energy counter.
-
-Registers 91/92 (`pv_energy_total`) have been added to the **SPH** and **TL-XH** profiles.
-The coordinator already preferred `pv_energy_total` over `energy_total` when the former was
-non-zero — these profiles now populate that field from hardware rather than leaving it at 0.
-
-- **SPH** (all variants): registers 91/92 added
-- **TL-XH** (all variants): registers 91/92 added
-- **MOD, WIT, SPH-TL3:** already had 91/92 in prior releases
-- **MIC, SPF:** registers 91/92 serve different purposes on these models and are unchanged
-
-### SPH — Export Limit Registers Added (#131)
-
-Holding registers 122 (`export_limit_mode`) and 123 (`export_limit_power`) were missing from
-both SPH 3-6kW and 7-10kW profiles despite being documented in the official Growatt Modbus
-protocol (register 122 = RS485 export limit mode, register 123 = limit percentage × 0.1).
-
-These are now defined in both base profiles and inherited by all V2.01 variants. This does not
-resolve the RA1.0 firmware register aliasing reported in #131 — that is a separate issue
-affecting the 1017-1088 holding range only.
-- **SPH Hybrid — Load First Battery Minimum SOC control - bugfix:**
-  Fixing bug with reading and showing new Load First SOC value.
+- **SPE auto-detection fixed (#212):** DTC code 64541 is now mapped to `spe_8000_12000_es`.
+  Previously the integration fell through to SPH 7-10kW on first setup.
 
 ---
 

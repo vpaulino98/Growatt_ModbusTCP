@@ -1,7 +1,7 @@
 # Growatt Modbus Integration for Home Assistant ☀️
 
 ![HACS Badge](https://img.shields.io/badge/HACS-Custom-orange.svg)
-![Version](https://img.shields.io/badge/Version-0.6.9-blue.svg)
+![Version](https://img.shields.io/badge/Version-0.7.0-blue.svg)
 [![GitHub Issues](https://img.shields.io/github/issues/0xAHA/Growatt_ModbusTCP.svg)](https://github.com/0xAHA/Growatt_ModbusTCP/issues)
 [![GitHub Stars](https://img.shields.io/github/stars/0xAHA/Growatt_ModbusTCP.svg?style=social)](https://github.com/0xAHA/Growatt_ModbusTCP)
 
@@ -295,12 +295,14 @@ The integration pre-configures sensors with the correct `state_class` and `devic
 
 See **[RELEASENOTES.md](RELEASENOTES.md)** for the full changelog.
 
-**v0.6.9 highlights:**
+**v0.7.0 highlights:**
 
+- **SPH TL3 — Energy Today drop at sunset fixed (#225):** Per-MPPT energy registers are now used as long as any string has accumulated energy today, regardless of whether PV strings are currently producing. Previously the data source switched to register 54 (AC output total) at sunset, causing a visible ~2 kWh drop.
+- **WIT 8K-HU — Battery voltage wrong value fixed (#247):** VPP register 31214 (`maps_to battery_voltage`) reports spuriously low values on some firmware variants. The integration now reads all available voltage registers and selects the highest plausible value, consistent with the existing battery current selection strategy.
 - **SPF — Battery Power always zero fixed (#174):** `_validate_spf_battery_power_sign` referenced a non-existent attribute (`data.inverter_status` instead of `data.status`), silently suppressing battery power on every poll.
-- **MID — Grid and load energy sensors added (#240):** Power flow (import/export/load) and daily/total energy counters were missing from the profile despite the hardware responding at registers 3041–3078. `grid_energy_today` now reads directly from hardware instead of a broken calculation.
-- **MID V2.01 — Battery support added (#240):** Full battery sensor set (voltage, SOC, current, temperature, SOH, power, charge/discharge energy) added via VPP 31200+ registers, confirmed live in register scan.
-- **SPH / TL-XH — Accurate lifetime PV generation (#243):** Registers 91/92 (`Epv_total H/L`) added to SPH and TL-XH profiles. This is the raw DC-side cumulative generation shown in ShinePhone as "Total Power Generation" — more reliable for the HA energy dashboard than the previously used net-calculated `energy_total`.
+- **MID — Grid, load energy and battery sensors added (#240):** Power flow, daily/total energy counters, and full VPP battery set (voltage, SOC, current, temp, SOH, power) were all missing from the profile.
+- **SPH / TL-XH — Accurate lifetime PV generation (#243):** Registers 91/92 (`Epv_total H/L`) added — raw DC-side cumulative generation, matching ShinePhone "Total Power Generation".
+- **SPE auto-detection fixed (#212):** DTC 64541 now maps correctly to the SPE 8000-12000 ES profile instead of falling back to SPH 7-10kW.
 
 **v0.6.8 highlights:**
 

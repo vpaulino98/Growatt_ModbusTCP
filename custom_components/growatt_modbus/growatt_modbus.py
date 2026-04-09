@@ -1301,25 +1301,21 @@ class GrowattModbus:
             # Energy Today
             # For WIT/MIC/SPH-TL3 with per-MPPT tracking: use sum of PV string energy for accurate solar production
             # Registers 53-54 show total system AC output (PV+battery), not PV-only (Issue #146)
-            # IMPORTANT: Only use per-MPPT calculation if PV strings are actually connected (avoid garbage data)
-            pv1_connected = data.pv1_voltage > 0 or data.pv1_power > 0
-            pv2_connected = data.pv2_voltage > 0 or data.pv2_power > 0
-            pv3_connected = data.pv3_voltage > 0 or data.pv3_power > 0
+            # Use per-MPPT values whenever any register has a non-zero accumulated value.
+            # Do NOT gate on pv*_connected (voltage/power > 0): at sunset those drop to 0 but the
+            # per-MPPT energy registers still hold today's accumulated total. Gating on connected
+            # caused a data-source switch at end of day, producing a spurious drop (Issue #225).
+            # Each string contributes only if its own energy_today > 0, so a 2-string model with
+            # pv3_energy_today = 0 all day is handled correctly without the connected check.
+            has_mppt_energy = (data.pv1_energy_today > 0 or data.pv2_energy_today > 0 or data.pv3_energy_today > 0)
 
-            if (pv1_connected or pv2_connected or pv3_connected) and (data.pv1_energy_today > 0 or data.pv2_energy_today > 0 or data.pv3_energy_today > 0):
-                # Calculate energy only from connected strings to avoid garbage data
-                pv_energy_sum = 0.0
-                if pv1_connected and data.pv1_energy_today > 0:
-                    pv_energy_sum += data.pv1_energy_today
-                if pv2_connected and data.pv2_energy_today > 0:
-                    pv_energy_sum += data.pv2_energy_today
-                if pv3_connected and data.pv3_energy_today > 0:
-                    pv_energy_sum += data.pv3_energy_today
+            if has_mppt_energy:
+                pv_energy_sum = data.pv1_energy_today + data.pv2_energy_today + data.pv3_energy_today
 
                 # Sanity check: per-MPPT energy should be reasonable (< 100 kWh per day for MIC/small inverters)
                 if pv_energy_sum < 100:
                     data.energy_today = pv_energy_sum
-                    logger.debug(f"[{self.register_map['name']}@{self.connection_id}] Energy today from connected MPPTs: PV1={data.pv1_energy_today if pv1_connected else 'N/A'} + PV2={data.pv2_energy_today if pv2_connected else 'N/A'} + PV3={data.pv3_energy_today if pv3_connected else 'N/A'} = {data.energy_today} kWh")
+                    logger.debug(f"[{self.register_map['name']}@{self.connection_id}] Energy today from per-MPPT registers: PV1={data.pv1_energy_today} + PV2={data.pv2_energy_today} + PV3={data.pv3_energy_today} = {data.energy_today} kWh")
                 else:
                     # Garbage data detected - fall back to register reading
                     logger.warning(f"[{self.register_map['name']}@{self.connection_id}] Per-MPPT energy {pv_energy_sum} kWh unrealistic - using fallback register instead")
@@ -1328,7 +1324,7 @@ class GrowattModbus:
                         data.energy_today = self._get_register_value(energy_today_addr) or 0.0
                         logger.debug(f"[{self.register_map['name']}@{self.connection_id}] Energy today from reg {energy_today_addr}: {data.energy_today} kWh")
             else:
-                # Fallback to total system output for other inverters
+                # No per-MPPT data (profile doesn't define those registers, or midnight register reset)
                 energy_today_addr = self._find_register_by_name('energy_today_low')
                 if energy_today_addr:
                     data.energy_today = self._get_register_value(energy_today_addr) or 0.0
@@ -1991,12 +1987,40 @@ class GrowattModbus:
     def _read_battery_data(self, data: GrowattData) -> None:
         """Read battery data (storage/hybrid models)"""
         try:
-            # Battery voltage (use smart fallback if multiple ranges available)
-            value = self._get_register_value_with_fallback('battery_voltage')
-            if value is not None:
-                data.battery_voltage = value
+            # Battery voltage
+            # Issue #247: on some WIT firmware variants, VPP register 31214 (maps_to='battery_voltage')
+            # reports a spuriously low value (e.g. 5.2 V) while the native 8034 register is correct
+            # (53.7 V). Apply the same multi-candidate / largest-plausible-value strategy used for
+            # battery_current: read all available voltage registers, discard implausibly low values,
+            # and pick the highest (most likely correct) reading.
+            _VOLTAGE_LOOKUP_NAMES = (
+                'battery_voltage',       # native 8000-range or VPP maps_to (e.g. WIT 8034 / 31214)
+                'battery_voltage_bms',   # BMS voltage (WIT-only, typically more accurate)
+                'battery_voltage_legacy',
+            )
+            _VOLTAGE_MIN_V = 10.0   # below this is implausible for any connected battery pack
+            _VOLTAGE_MAX_V = 800.0  # sanity ceiling
+
+            seen_voltage_addrs: set = set()
+            voltage_candidates: list = []
+            for _vname in _VOLTAGE_LOOKUP_NAMES:
+                _a = (self._find_register_by_name_with_fallback(_vname) or
+                      self._find_register_by_name(_vname))
+                if _a and _a not in seen_voltage_addrs:
+                    seen_voltage_addrs.add(_a)
+                    _v = self._get_register_value(_a)
+                    if _v is not None and _VOLTAGE_MIN_V <= _v <= _VOLTAGE_MAX_V:
+                        voltage_candidates.append((_a, _v))
+                        logger.debug(f"Battery voltage candidate reg {_a} ({_vname}): {_v}V")
+
+            if voltage_candidates:
+                _best_addr, _best_val = max(voltage_candidates, key=lambda c: c[1])
+                data.battery_voltage = _best_val
+                logger.debug(f"Battery voltage: {_best_val}V (selected from {len(voltage_candidates)} candidate(s), reg {_best_addr})")
             else:
-                data.battery_voltage = 0.0
+                # All candidates out of range or absent — fall back to smart-fallback lookup
+                value = self._get_register_value_with_fallback('battery_voltage')
+                data.battery_voltage = value if value is not None else 0.0
 
             # Battery current (signed: positive=discharge, negative=charge)
             # Issue #226: some WIT firmware returns a small wrong non-zero on VPP reg 31215
