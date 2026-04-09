@@ -53,6 +53,12 @@ SPH_3000_6000 = {
         62: {'name': 'backup_frequency', 'scale': 0.01, 'unit': 'Hz', 'desc': 'Backup output frequency'},
         64: {'name': 'load_power', 'scale': 1, 'unit': 'W', 'desc': 'Load consumption power'},
 
+        # PV energy total — raw DC-side generation, unaffected by battery cycling (#243)
+        # Protocol V1.39 regs 91-92: Epv_total H/L (0.1 kWh)
+        # Use this for HA energy dashboard; energy_total (reg 55/56) is a net calculated value
+        91: {'name': 'pv_energy_total_high', 'scale': 1, 'unit': '', 'pair': 92, 'desc': 'PV energy total lifetime HIGH'},
+        92: {'name': 'pv_energy_total_low', 'scale': 1, 'unit': '', 'pair': 91, 'combined_scale': 0.1, 'combined_unit': 'kWh', 'desc': 'PV energy total lifetime LOW'},
+
         # Temperatures
         93: {'name': 'inverter_temp', 'scale': 0.1, 'unit': '°C', 'signed': True},
         94: {'name': 'ipm_temp', 'scale': 0.1, 'unit': '°C', 'signed': True},
@@ -70,6 +76,12 @@ SPH_3000_6000 = {
         # Basic Control
         0: {'name': 'on_off', 'scale': 1, 'unit': '', 'access': 'RW', 'desc': '0=Off, 1=On'},
         3: {'name': 'active_power_rate', 'scale': 1, 'unit': '%', 'access': 'RW'},
+
+        # Export Limit Control
+        122: {'name': 'export_limit_mode', 'scale': 1, 'unit': '', 'access': 'RW',
+              'desc': 'Export limit mode: 0=Disabled, 1=RS485'},
+        123: {'name': 'export_limit_power', 'scale': 0.1, 'unit': '%', 'access': 'RW',
+              'desc': 'Export limit power percentage (0-100%)'},
 
         # Load First Battery Minimum SOC
         # Not in official Growatt Modbus protocol documentation.
@@ -257,6 +269,12 @@ SPH_7000_10000 = {
         # Basic Control
         0: {'name': 'on_off', 'scale': 1, 'unit': '', 'access': 'RW', 'desc': '0=Off, 1=On'},
         3: {'name': 'active_power_rate', 'scale': 1, 'unit': '%', 'access': 'RW'},
+
+        # Export Limit Control
+        122: {'name': 'export_limit_mode', 'scale': 1, 'unit': '', 'access': 'RW',
+              'desc': 'Export limit mode: 0=Disabled, 1=RS485'},
+        123: {'name': 'export_limit_power', 'scale': 0.1, 'unit': '%', 'access': 'RW',
+              'desc': 'Export limit power percentage (0-100%)'},
 
         # Load First Battery Minimum SOC
         # Not in official Growatt Modbus protocol documentation.

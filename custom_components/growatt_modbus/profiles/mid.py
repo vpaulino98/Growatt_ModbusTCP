@@ -58,7 +58,29 @@ MID_15000_25000TL3_X = {
         54: {'name': 'energy_today_low', 'scale': 1, 'unit': '', 'pair': 53, 'combined_scale': 0.1, 'combined_unit': 'kWh'},
         55: {'name': 'energy_total_high', 'scale': 1, 'unit': '', 'pair': 56},
         56: {'name': 'energy_total_low', 'scale': 1, 'unit': '', 'pair': 55, 'combined_scale': 0.1, 'combined_unit': 'kWh'},
-        
+
+        # Power flow — confirmed responding in issue #240 scan
+        3041: {'name': 'power_to_user_high', 'scale': 1, 'unit': '', 'pair': 3042, 'desc': 'Grid import power (HIGH word)'},
+        3042: {'name': 'power_to_user_low', 'scale': 1, 'unit': '', 'pair': 3041, 'combined_scale': 0.1, 'combined_unit': 'W', 'desc': 'Grid import power (LOW word)'},
+        3043: {'name': 'power_to_grid_high', 'scale': 1, 'unit': '', 'pair': 3044, 'desc': 'Grid export power (HIGH word)'},
+        3044: {'name': 'power_to_grid_low', 'scale': 1, 'unit': '', 'pair': 3043, 'combined_scale': 0.1, 'combined_unit': 'W', 'signed': True, 'desc': 'Grid export power (LOW word, signed)'},
+        3045: {'name': 'power_to_load_high', 'scale': 1, 'unit': '', 'pair': 3046, 'desc': 'Load power (HIGH word)'},
+        3046: {'name': 'power_to_load_low', 'scale': 1, 'unit': '', 'pair': 3045, 'combined_scale': 0.1, 'combined_unit': 'W', 'desc': 'Load power (LOW word)'},
+
+        # Grid energy counters — confirmed responding in issue #240 scan
+        3067: {'name': 'energy_to_user_today_high', 'scale': 1, 'unit': '', 'pair': 3068, 'desc': 'Grid import energy today (HIGH word)'},
+        3068: {'name': 'energy_to_user_today_low', 'scale': 1, 'unit': '', 'pair': 3067, 'combined_scale': 0.1, 'combined_unit': 'kWh', 'desc': 'Grid import energy today (LOW word)'},
+        3069: {'name': 'energy_to_user_total_high', 'scale': 1, 'unit': '', 'pair': 3070, 'desc': 'Grid import energy total (HIGH word)'},
+        3070: {'name': 'energy_to_user_total_low', 'scale': 1, 'unit': '', 'pair': 3069, 'combined_scale': 0.1, 'combined_unit': 'kWh', 'desc': 'Grid import energy total (LOW word)'},
+        3071: {'name': 'energy_to_grid_today_high', 'scale': 1, 'unit': '', 'pair': 3072, 'desc': 'Grid export energy today (HIGH word)'},
+        3072: {'name': 'energy_to_grid_today_low', 'scale': 1, 'unit': '', 'pair': 3071, 'combined_scale': 0.1, 'combined_unit': 'kWh', 'desc': 'Grid export energy today (LOW word)'},
+        3073: {'name': 'energy_to_grid_total_high', 'scale': 1, 'unit': '', 'pair': 3074, 'desc': 'Grid export energy total (HIGH word)'},
+        3074: {'name': 'energy_to_grid_total_low', 'scale': 1, 'unit': '', 'pair': 3073, 'combined_scale': 0.1, 'combined_unit': 'kWh', 'desc': 'Grid export energy total (LOW word)'},
+        3075: {'name': 'load_energy_today_high', 'scale': 1, 'unit': '', 'pair': 3076, 'desc': 'Load energy today (HIGH word)'},
+        3076: {'name': 'load_energy_today_low', 'scale': 1, 'unit': '', 'pair': 3075, 'combined_scale': 0.1, 'combined_unit': 'kWh', 'desc': 'Load energy today (LOW word)'},
+        3077: {'name': 'load_energy_total_high', 'scale': 1, 'unit': '', 'pair': 3078, 'desc': 'Load energy total (HIGH word)'},
+        3078: {'name': 'load_energy_total_low', 'scale': 1, 'unit': '', 'pair': 3077, 'combined_scale': 0.1, 'combined_unit': 'kWh', 'desc': 'Load energy total (LOW word)'},
+
         # Temperatures
         93: {'name': 'inverter_temp', 'scale': 0.1, 'unit': '°C', 'signed': True},
         94: {'name': 'ipm_temp', 'scale': 0.1, 'unit': '°C', 'signed': True},
@@ -114,9 +136,14 @@ MID_15000_25000TL3_X_V201 = {
         31102: {'name': 'ac_voltage_t_vpp', 'scale': 0.1, 'unit': 'V', 'maps_to': 'grid_voltage_t'},
         31103: {'name': 'ac_frequency_vpp', 'scale': 0.01, 'unit': 'Hz', 'maps_to': 'grid_frequency'},
 
-        # Grid/Meter Power
-        31112: {'name': 'meter_power_high', 'scale': 1, 'unit': '', 'pair': 31113},
-        31113: {'name': 'meter_power_low', 'scale': 1, 'unit': '', 'pair': 31112, 'combined_scale': 0.1, 'combined_unit': 'W', 'signed': True},
+        # Grid/Meter Power — signed (positive=export, negative=import)
+        # maps_to triggers fallback for power_to_grid when 3044=0 (same pattern as MOD)
+        31112: {'name': 'meter_power_high', 'scale': 1, 'unit': '', 'pair': 31113, 'desc': 'Meter power HIGH'},
+        31113: {'name': 'meter_power_low', 'scale': 1, 'unit': '', 'pair': 31112, 'combined_scale': 0.1, 'combined_unit': 'W', 'signed': True, 'maps_to': 'power_to_grid_low', 'desc': 'Meter power LOW — fallback for power_to_grid when 3044=0'},
+
+        # Load Power — confirmed responding in issue #240 scan (31119=94 → 9.4W)
+        31118: {'name': 'load_power_high_vpp', 'scale': 1, 'unit': '', 'pair': 31119, 'maps_to': 'power_to_load', 'desc': 'Load power HIGH (VPP)'},
+        31119: {'name': 'load_power_low_vpp', 'scale': 1, 'unit': '', 'pair': 31118, 'combined_scale': 0.1, 'combined_unit': 'W', 'desc': 'Load power LOW (VPP)'},
 
         # Energy Data
         31120: {'name': 'energy_today_high_vpp', 'scale': 1, 'unit': '', 'pair': 31121, 'maps_to': 'energy_today'},
@@ -128,6 +155,33 @@ MID_15000_25000TL3_X_V201 = {
         31130: {'name': 'inverter_temp_vpp', 'scale': 0.1, 'unit': '°C', 'maps_to': 'inverter_temp', 'signed': True},
         31131: {'name': 'ipm_temp_vpp', 'scale': 0.1, 'unit': '°C', 'maps_to': 'ipm_temp', 'signed': True},
         31132: {'name': 'boost_temp_vpp', 'scale': 0.1, 'unit': '°C', 'maps_to': 'boost_temp', 'signed': True},
+
+        # === BATTERY (VPP 31200+ range) — confirmed responding in issue #240 scan ===
+        # Named without _vpp suffix so coordinator's fallback lookup finds them directly
+        # (no competing 3000-range battery registers on MID)
+        31200: {'name': 'battery_power_high', 'scale': 1, 'unit': '', 'pair': 31201, 'desc': 'Battery power HIGH'},
+        31201: {'name': 'battery_power_low', 'scale': 1, 'unit': '', 'pair': 31200, 'combined_scale': 0.1, 'combined_unit': 'W', 'signed': True, 'desc': 'Battery power (signed, positive=charging)'},
+
+        # Battery charge/discharge energy (VPP)
+        31202: {'name': 'charge_energy_today_vpp_high', 'scale': 1, 'unit': '', 'pair': 31203},
+        31203: {'name': 'charge_energy_today_vpp_low', 'scale': 1, 'unit': '', 'pair': 31202, 'combined_scale': 0.1, 'combined_unit': 'kWh'},
+        31204: {'name': 'charge_energy_total_vpp_high', 'scale': 1, 'unit': '', 'pair': 31205},
+        31205: {'name': 'charge_energy_total_vpp_low', 'scale': 1, 'unit': '', 'pair': 31204, 'combined_scale': 0.1, 'combined_unit': 'kWh'},
+        31206: {'name': 'discharge_energy_today_vpp_high', 'scale': 1, 'unit': '', 'pair': 31207},
+        31207: {'name': 'discharge_energy_today_vpp_low', 'scale': 1, 'unit': '', 'pair': 31206, 'combined_scale': 0.1, 'combined_unit': 'kWh'},
+        31208: {'name': 'discharge_energy_total_vpp_high', 'scale': 1, 'unit': '', 'pair': 31209},
+        31209: {'name': 'discharge_energy_total_vpp_low', 'scale': 1, 'unit': '', 'pair': 31208, 'combined_scale': 0.1, 'combined_unit': 'kWh'},
+
+        # Battery state — confirmed responding in issue #240 scan
+        # 31214=4048 → 404.8V, 31215/31216=0/148 → 14.8A, 31217=33 → 33% SOC
+        31214: {'name': 'battery_voltage', 'scale': 0.1, 'unit': 'V', 'desc': 'Battery voltage (VPP)'},
+        31215: {'name': 'battery_current_vpp_high', 'scale': 1, 'unit': '', 'pair': 31216},
+        31216: {'name': 'battery_current_vpp_low', 'scale': 1, 'unit': '', 'pair': 31215, 'combined_scale': 0.1, 'combined_unit': 'A', 'signed': True, 'maps_to': 'battery_current'},
+        31217: {'name': 'battery_soc', 'scale': 1, 'unit': '%', 'desc': 'Battery SOC (VPP)'},
+        31218: {'name': 'battery_soh', 'scale': 1, 'unit': '%', 'desc': 'Battery state of health'},
+        # 31222/31223=0/415 → 41.5°C battery temp
+        31222: {'name': 'battery_temp_vpp_high', 'scale': 1, 'unit': '', 'pair': 31223},
+        31223: {'name': 'battery_temp', 'scale': 0.1, 'unit': '°C', 'signed': True, 'desc': 'Battery temperature (VPP)'},
     },
     'holding_registers': {
         # === Legacy REGISTERS ===

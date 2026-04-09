@@ -412,6 +412,7 @@ INVERTER_PROFILES = {
             BASIC_PV_SENSORS |
             THREE_PHASE_SENSORS |
             ENERGY_SENSORS |
+            GRID_SENSORS |
             TEMPERATURE_SENSORS |
             STATUS_SENSORS
         ),
@@ -424,13 +425,15 @@ INVERTER_PROFILES = {
         "register_map": "MID_15000_25000TL3_X_V201",
         "phases": 3,
         "has_pv3": False,
-        "has_battery": False,
+        "has_battery": True,
         "max_power_kw": 25.0,
         "protocol_version": "v2.01",
         "sensors": (
             BASIC_PV_SENSORS |
             THREE_PHASE_SENSORS |
             ENERGY_SENSORS |
+            GRID_SENSORS |
+            BATTERY_SENSORS |
             TEMPERATURE_SENSORS |
             STATUS_SENSORS
         ),

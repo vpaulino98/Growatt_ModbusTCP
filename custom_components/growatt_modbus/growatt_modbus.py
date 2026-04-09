@@ -684,7 +684,7 @@ class GrowattModbus:
         if abs(battery_power) < MIN_POWER_THRESHOLD:
             return battery_power
 
-        status = int(data.inverter_status)
+        status = int(data.status)
 
         # Charging states: battery is receiving power — sign must be positive
         CHARGING_STATES = {5, 6, 7, 8, 9, 10}
