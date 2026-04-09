@@ -69,6 +69,8 @@ protocol (register 122 = RS485 export limit mode, register 123 = limit percentag
 These are now defined in both base profiles and inherited by all V2.01 variants. This does not
 resolve the RA1.0 firmware register aliasing reported in #131 — that is a separate issue
 affecting the 1017-1088 holding range only.
+- **SPH Hybrid — Load First Battery Minimum SOC control - bugfix:**
+  Fixing bug with reading and showing new Load First SOC value.
 
 ---
 
