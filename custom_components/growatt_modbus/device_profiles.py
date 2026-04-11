@@ -611,6 +611,28 @@ INVERTER_PROFILES = {
     },
 
     # ========================================================================
+    # SPA SERIES - AC-Coupled Battery Storage (No PV MPPT)
+    # ========================================================================
+
+    "spa_3000_6000_tl_bl": {
+        "name": "SPA (AC Storage) 3-6kW",
+        "description": "AC-coupled battery storage inverter, no solar DC inputs (SPA 3000TL BL)",
+        "register_map": "SPA_3000_6000_TL_BL",
+        "phases": 1,
+        "has_pv3": False,
+        "has_battery": True,
+        "max_power_kw": 6.0,
+        "sensors": (
+            BASIC_AC_SENSORS |
+            GRID_SENSORS |
+            POWER_FLOW_SENSORS |
+            ENERGY_BREAKDOWN_SENSORS |
+            BATTERY_SENSORS |
+            STATUS_SENSORS
+        ),
+    },
+
+    # ========================================================================
     # SPF SERIES - Off-Grid Storage (Battery with AC Input/Output)
     # ========================================================================
 
@@ -646,11 +668,26 @@ INVERTER_PROFILES = {
             BASIC_PV_SENSORS |
             BASIC_AC_SENSORS |
             ENERGY_SENSORS |
-            ENERGY_BREAKDOWN_SENSORS |
-            BATTERY_SENSORS |
+            ENERGY_BREAKDOWN_SENSORS |   # includes load_energy_today/total (regs 85-88)
+            BATTERY_SENSORS |            # includes ac_discharge_energy_total (reg 66/67 = grid import total)
             TEMPERATURE_SENSORS |
             STATUS_SENSORS |
-            SPF_OFFGRID_SENSORS
+            {
+                # SPF-compatible sensors confirmed working on SPE
+                "load_percentage",        # reg 27
+                "ac_apparent_power",      # regs 11/12
+                "grid_voltage",           # reg 20
+                "grid_frequency",         # reg 21
+                "ac_discharge_energy_today",  # regs 64/65 = grid import today on SPE
+                "mppt_fan_speed",         # reg 81
+                "inverter_fan_speed",     # reg 82
+                "dcdc_temp",              # reg 26
+                "buck1_temp",             # reg 32
+                "buck2_temp",             # reg 33
+                # ac_input_power excluded — regs 36/37 produce 429GW overflow on SPE
+                # generator_* excluded — SPE has no generator input
+                # op_discharge_energy_today/total excluded — remapped to load_energy_* in profile
+            }
         ),
     },
 

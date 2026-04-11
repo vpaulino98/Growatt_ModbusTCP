@@ -95,18 +95,24 @@ OFFGRID_SCAN_RANGES = [
 # Service schema
 SERVICE_EXPORT_DUMP_SCHEMA = vol.Schema(
     {
-        # Connection type selection
+        # Optional: select a configured integration entry to pre-fill connection details.
+        # When provided, connection_type/host/port/device/baudrate/slave_id are all ignored —
+        # they are read directly from the config entry. Profile and entity values are always
+        # included. When omitted, manual connection parameters below are required.
+        vol.Optional("config_entry"): cv.string,
+
+        # Connection type selection (ignored when config_entry is set)
         vol.Optional("connection_type", default="tcp"): vol.In(["tcp", "serial"]),
 
-        # TCP parameters (required if connection_type=tcp)
+        # TCP parameters (required if connection_type=tcp and no config_entry)
         vol.Optional("host"): cv.string,
         vol.Optional("port", default=502): cv.port,
 
-        # Serial parameters (required if connection_type=serial)
+        # Serial parameters (required if connection_type=serial and no config_entry)
         vol.Optional("device"): cv.string,  # e.g., /dev/ttyUSB0, COM3
         vol.Optional("baudrate", default=9600): vol.All(vol.Coerce(int), vol.In([4800, 9600, 19200, 38400, 57600, 115200])),
 
-        # Common parameters
+        # Common parameters (ignored when config_entry is set — slave_id read from entry)
         vol.Optional("slave_id", default=1): vol.All(vol.Coerce(int), vol.Range(min=1, max=247)),
         vol.Optional("notify", default=True): cv.boolean,
         vol.Optional("offgrid_mode", default=False): cv.boolean,  # CRITICAL: Enable for SPF to prevent power reset
@@ -328,12 +334,6 @@ async def async_setup_services(hass: HomeAssistant) -> None:
 
     async def export_register_dump(call: ServiceCall) -> None:
         """Universal register scanner - scans all ranges and auto-detects model."""
-        connection_type = call.data.get("connection_type", "tcp")
-        host = call.data.get("host")
-        port = call.data.get("port", 502)
-        device = call.data.get("device")
-        baudrate = call.data.get("baudrate", 9600)
-        slave_id = call.data.get("slave_id", 1)
         send_notification = call.data.get("notify", True)
         offgrid_mode = call.data.get("offgrid_mode", False)
 
@@ -346,15 +346,47 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         if call.data.get("scan_vpp_control", True):  enabled_groups.add("vpp_control")
         if call.data.get("scan_vpp_data", True):     enabled_groups.add("vpp_data")
 
-        # Validate required parameters based on connection type
-        if connection_type == "tcp":
-            if not host:
-                _LOGGER.error("host parameter required for TCP connection")
+        # --- Resolve connection parameters ---
+        # If config_entry is provided, pull all connection details directly from the
+        # coordinator — no manual entry needed, profile/entity values always included.
+        pre_resolved_coordinator = None
+        config_entry_id = call.data.get("config_entry")
+
+        if config_entry_id:
+            coordinator = hass.data.get(DOMAIN, {}).get(config_entry_id)
+            if not coordinator or not hasattr(coordinator, 'entry'):
+                _LOGGER.error("config_entry '%s' not found in Growatt Modbus integration", config_entry_id)
                 return
-        elif connection_type == "serial":
-            if not device:
-                _LOGGER.error("device parameter required for serial connection")
-                return
+
+            entry_data = coordinator.entry.data
+            connection_type = entry_data.get("connection_type", "tcp")
+            host = entry_data.get("host")
+            port = entry_data.get("port", 502)
+            device = entry_data.get("device")
+            baudrate = entry_data.get("baudrate", 9600)
+            slave_id = entry_data.get("slave_id", 1)
+            pre_resolved_coordinator = coordinator
+            _LOGGER.info(
+                "Using config entry '%s' (%s) for register scan",
+                coordinator.entry.title, config_entry_id
+            )
+        else:
+            connection_type = call.data.get("connection_type", "tcp")
+            host = call.data.get("host")
+            port = call.data.get("port", 502)
+            device = call.data.get("device")
+            baudrate = call.data.get("baudrate", 9600)
+            slave_id = call.data.get("slave_id", 1)
+
+            # Validate required manual parameters
+            if connection_type == "tcp":
+                if not host:
+                    _LOGGER.error("host parameter required for TCP connection (or select a config_entry)")
+                    return
+            elif connection_type == "serial":
+                if not device:
+                    _LOGGER.error("device parameter required for serial connection (or select a config_entry)")
+                    return
 
         if offgrid_mode:
             _LOGGER.warning("⚠️ OffGrid mode ENABLED - skipping VPP registers to prevent power reset on SPF inverters")
@@ -365,9 +397,9 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         else:
             _LOGGER.info("Starting %s register scan on %s @ %d baud", "OffGrid" if offgrid_mode else "universal", device, baudrate)
 
-        # Run export in executor - coordinator will be auto-detected based on connection parameters
+        # Run export in executor — pass pre-resolved coordinator if available
         result = await hass.async_add_executor_job(
-            _export_registers_to_csv, hass, connection_type, host, port, device, baudrate, slave_id, offgrid_mode, enabled_groups
+            _export_registers_to_csv, hass, connection_type, host, port, device, baudrate, slave_id, offgrid_mode, enabled_groups, pre_resolved_coordinator
         )
         
         if result["success"]:
@@ -1601,7 +1633,7 @@ def _detect_inverter_model(register_data: Dict[int, Dict[str, Any]]) -> Dict[str
     return detection
 
 
-def _export_registers_to_csv(hass, connection_type: str, host: str, port: int, device: str, baudrate: int, slave_id: int, offgrid_mode: bool = False, enabled_groups: set = None) -> dict:
+def _export_registers_to_csv(hass, connection_type: str, host: str, port: int, device: str, baudrate: int, slave_id: int, offgrid_mode: bool = False, enabled_groups: set = None, coordinator=None) -> dict:
     """
     Export all registers to CSV file with auto-detection (blocking).
 
@@ -1613,8 +1645,9 @@ def _export_registers_to_csv(hass, connection_type: str, host: str, port: int, d
         baudrate: Serial baudrate for serial connection
         slave_id: Modbus slave ID
         offgrid_mode: If True, skip VPP registers (30000+, 31000+) to prevent SPF power resets
-
-    Note: Coordinator is auto-detected by matching connection parameters
+        coordinator: Pre-resolved coordinator (from config_entry selection). When provided,
+                     the auto-detection loop is skipped entirely — connection parameters and
+                     profile/entity values are sourced directly from this coordinator.
     """
     result = {
         "success": False,
@@ -1657,34 +1690,36 @@ def _export_registers_to_csv(hass, connection_type: str, host: str, port: int, d
         mode_str = "OffGrid scan (safe for SPF)" if offgrid_mode else "universal scan"
         _LOGGER.info(f"Connected, starting {mode_str}...")
 
-        # Auto-detect coordinator by matching connection parameters
-        coordinator = None
-        if hass.data.get(DOMAIN):
-            for entry_id, coord in hass.data[DOMAIN].items():
-                if not coord or not hasattr(coord, 'entry'):
-                    continue
+        # Resolve coordinator for profile/entity data.
+        # If pre-resolved via config_entry selection, use it directly.
+        # Otherwise fall back to matching by connection parameters.
+        if coordinator is not None:
+            _LOGGER.info("Using pre-resolved coordinator from config entry — entity values will be included")
+        else:
+            if hass.data.get(DOMAIN):
+                for entry_id, coord in hass.data[DOMAIN].items():
+                    if not coord or not hasattr(coord, 'entry'):
+                        continue
 
-                entry_data = coord.entry.data
+                    entry_data = coord.entry.data
 
-                # Match based on connection type
-                if connection_type == "tcp":
-                    # Match TCP connections by host and port
-                    if (entry_data.get("connection_type") == "tcp" and
-                        entry_data.get("host") == host and
-                        entry_data.get("port", 502) == port):
-                        coordinator = coord
-                        _LOGGER.info(f"Auto-detected coordinator for {host}:{port} - entity values will be included")
-                        break
-                else:  # serial
-                    # Match Serial connections by device path
-                    if (entry_data.get("connection_type") == "serial" and
-                        entry_data.get("device") == device):
-                        coordinator = coord
-                        _LOGGER.info(f"Auto-detected coordinator for {device} - entity values will be included")
-                        break
+                    # Match based on connection type
+                    if connection_type == "tcp":
+                        if (entry_data.get("connection_type") == "tcp" and
+                            entry_data.get("host") == host and
+                            entry_data.get("port", 502) == port):
+                            coordinator = coord
+                            _LOGGER.info(f"Auto-detected coordinator for {host}:{port} - entity values will be included")
+                            break
+                    else:  # serial
+                        if (entry_data.get("connection_type") == "serial" and
+                            entry_data.get("device") == device):
+                            coordinator = coord
+                            _LOGGER.info(f"Auto-detected coordinator for {device} - entity values will be included")
+                            break
 
-        if not coordinator:
-            _LOGGER.info("No matching coordinator found - entity values will not be included in CSV")
+            if not coordinator:
+                _LOGGER.info("No matching coordinator found - entity values will not be included in CSV")
 
         # Extract currently selected profile from coordinator (if available)
         selected_profile_key = None

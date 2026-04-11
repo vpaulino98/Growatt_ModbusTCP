@@ -1,7 +1,7 @@
 # Growatt Modbus Integration for Home Assistant ☀️
 
 ![HACS Badge](https://img.shields.io/badge/HACS-Custom-orange.svg)
-![Version](https://img.shields.io/badge/Version-0.7.0-blue.svg)
+![Version](https://img.shields.io/badge/Version-0.7.1-blue.svg)
 [![GitHub Issues](https://img.shields.io/github/issues/0xAHA/Growatt_ModbusTCP.svg)](https://github.com/0xAHA/Growatt_ModbusTCP/issues)
 [![GitHub Stars](https://img.shields.io/github/stars/0xAHA/Growatt_ModbusTCP.svg?style=social)](https://github.com/0xAHA/Growatt_ModbusTCP)
 
@@ -96,6 +96,7 @@ Understanding which sensor measures what is the most common source of confusion.
 | **SPH** 3–6kW         | Hybrid    | Single | Yes     | VPP + Legacy | ✅     |
 | **SPH** 7–10kW        | Hybrid    | Single | Yes     | VPP + Legacy | ✅     |
 | **SPH/SPM** 8–10kW HU | Hybrid    | Single | Yes     | VPP + Legacy | ⚠️   |
+| **SPA** 3–6kW TL BL   | AC Storage | Single | Yes    | Auto         | ✅     |
 | **SPH-TL3** 3–10kW    | Hybrid    | Three  | Yes     | VPP + Legacy | ✅     |
 | **WIT** 4–15kW TL3    | Hybrid    | Three  | Yes     | VPP v2.02    | ✅     |
 
@@ -294,6 +295,11 @@ The integration pre-configures sensors with the correct `state_class` and `devic
 ## What's New
 
 See **[RELEASENOTES.md](RELEASENOTES.md)** for the full changelog.
+
+**v0.7.1 highlights:**
+
+- **SPA series — new profile (#249):** SPA 3000–6000TL BL (AC-coupled battery storage, no PV inputs) now auto-detects correctly and gets its own dedicated profile. All battery, energy breakdown, load power, and AC voltage sensors work. Previously auto-detected as MIN 7000-10000TL-X with all sensors at zero.
+- **MIC misclassification of legacy string inverters fixed (#242):** Inverters with high PV voltage (> 80 V) and no 3000+ register range no longer incorrectly detect as MIC micro inverters.
 
 **v0.7.0 highlights:**
 

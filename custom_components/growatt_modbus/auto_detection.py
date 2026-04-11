@@ -430,9 +430,21 @@ def detect_profile_from_dtc(dtc_code: int) -> Optional[str]:
         # SPH series - Official Growatt DTCs
         3501: 'sph_3000_6000_v201',       # SPH 3000-6000TL BL (legacy/pre-UP, may need protocol check)
         3502: 'sph_3000_6000_v201',       # SPH 3000-6000TL BL -UP (upgraded model)
-        3735: 'sph_3000_6000_v201',       # SPA 3000-6000TL BL (similar to SPH)
-        3601: 'sph_tl3_3000_10000_v201',  # SPH 4000-10000TL3 BH-UP
-        3725: 'sph_tl3_3000_10000_v201',  # SPA 4000-10000TL3 BH-UP
+        3735: 'sph_3000_6000_v201',       # SPA 3000-6000TL BL (VPP-capable variant, confirmed DTC)
+        # TODO #249: DTC 3735 maps to sph_3000_6000_v201 (VPP-capable SPA variant with full
+        # 31000+ register support). The non-VPP SPA (firmware RH1.0) is detected via
+        # async_detect_inverter_series() battery/AC voltage check before DTC lookup,
+        # so it never reaches this map. If a user has firmware that reports DTC 3735 AND
+        # supports VPP, sph_3000_6000_v201 is correct. Consider a dedicated
+        # spa_3000_6000_tl_bl_v201 once VPP register layout is confirmed for SPA.
+        #
+        # VPP Register Applicability Notes for SPA/SPH DTC family (from Growatt VPP 2.01/2.03 docs):
+        #   30406 (Load Priority Discharge Cutoff SOC): Only DTC 3502, 3735, 3750, 3601
+        #   30208 (Export Limitation Protection Mode): NOT used by DTC 3725, 3601, 5601, 5800
+        #   30157 (EPS Offline Voltage): Different valid ranges per model —
+        #     consult Growatt documentation for per-model min/max before writing
+        3601: 'sph_tl3_3000_10000_v201',  # SPH 4000-10000TL3 BH-UP (confirmed DTC)
+        3725: 'sph_tl3_3000_10000_v201',  # SPA 4000-10000TL3 BH-UP (confirmed DTC)
 
         # SPF series - Off-Grid (034xx range from SPF protocol documentation)
         3400: 'spf_3000_6000_es_plus',         # SPF 3000-6000 ES PLUS (off-grid)
@@ -537,10 +549,43 @@ async def async_detect_inverter_series(
                 client.read_input_registers, 3003, 1
             )
             if min_range_test is None:
-                # Has 0-179 range but NOT 3000 range = MIC series
+                # Has 0-179 range but NOT 3000 range.
+                # Guard: MIC micro inverters have PV voltage < ~80V (raw < 800).
+                # A raw value > 800 at reg 3 indicates a legacy string inverter
+                # (e.g. MID DM1.0 firmware with 3-string, ~600V PV) that happens
+                # to lack the 3000+ range — not a MIC micro inverter.
+                if mic_test[0] > 800:
+                    _LOGGER.info(
+                        f"PV voltage {mic_test[0] * 0.1:.1f}V at reg 3 too high for MIC "
+                        f"(raw={mic_test[0]}, threshold=800) — likely legacy string inverter. "
+                        f"Defaulting to min_7000_10000_tl_x as closest approximation."
+                    )
+                    await hass.async_add_executor_job(client.disconnect)
+                    return 'min_7000_10000_tl_x'
                 _LOGGER.debug("Detected 0-179 range without 3000 range - MIC micro inverter")
                 await hass.async_add_executor_job(client.disconnect)
                 return 'mic_600_3300tl_x'
+
+        # CHECK SPA SERIES (pure AC-coupled storage, no PV inputs) — BEFORE MIN
+        # SPA responds to ALL register ranges with zeros (not exceptions), which fools the MIN
+        # detection. The distinguishing test is battery voltage at reg 1013 (always populated
+        # on SPA, ~530 raw = 53V) combined with no AC voltage at reg 38 (SPA never populates
+        # the 0-124 base range). SPH-TL3 always has reg 38 > 0 (grid voltage, even at night).
+        # SPH 3-6kW has battery at reg 13, not 1013, so reg 1013 = 0 on SPH 3-6kW.
+        spa_battery_test = await hass.async_add_executor_job(
+            client.read_input_registers, 1013, 1
+        )
+        if spa_battery_test is not None and len(spa_battery_test) > 0 and spa_battery_test[0] > 100:
+            base_ac_test = await hass.async_add_executor_job(
+                client.read_input_registers, 38, 1
+            )
+            if base_ac_test is None or len(base_ac_test) == 0 or base_ac_test[0] == 0:
+                _LOGGER.info(
+                    f"Detected SPA series: battery voltage at reg 1013 = {spa_battery_test[0] * 0.1:.1f}V "
+                    f"(raw={spa_battery_test[0]}), no AC voltage in base range (reg 38 = 0)"
+                )
+                await hass.async_add_executor_job(client.disconnect)
+                return 'spa_3000_6000_tl_bl'
 
         # CHECK MIN SERIES (uses 3000 range)
         # Test for PV1 at register 3003 to confirm MIN series

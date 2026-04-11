@@ -2004,14 +2004,19 @@ class GrowattModbus:
             seen_voltage_addrs: set = set()
             voltage_candidates: list = []
             for _vname in _VOLTAGE_LOOKUP_NAMES:
-                _a = (self._find_register_by_name_with_fallback(_vname) or
-                      self._find_register_by_name(_vname))
-                if _a and _a not in seen_voltage_addrs:
-                    seen_voltage_addrs.add(_a)
-                    _v = self._get_register_value(_a)
-                    if _v is not None and _VOLTAGE_MIN_V <= _v <= _VOLTAGE_MAX_V:
-                        voltage_candidates.append((_a, _v))
-                        logger.debug(f"Battery voltage candidate reg {_a} ({_vname}): {_v}V")
+                # Use _find_all_registers_by_name to get EVERY address for this name
+                # (including maps_to matches across all ranges). Previously only one
+                # address was returned (the preferred-range winner), so when the VPP range
+                # was preferred the native 8000-range register was never evaluated as a
+                # candidate — meaning the spurious VPP value was never compared against
+                # the correct native value. (Issue #247 root cause)
+                for _a in self._find_all_registers_by_name(_vname):
+                    if _a not in seen_voltage_addrs:
+                        seen_voltage_addrs.add(_a)
+                        _v = self._get_register_value(_a)
+                        if _v is not None and _VOLTAGE_MIN_V <= _v <= _VOLTAGE_MAX_V:
+                            voltage_candidates.append((_a, _v))
+                            logger.debug(f"Battery voltage candidate reg {_a} ({_vname}): {_v}V")
 
             if voltage_candidates:
                 _best_addr, _best_val = max(voltage_candidates, key=lambda c: c[1])
@@ -2038,14 +2043,15 @@ class GrowattModbus:
             seen_current_addrs: set = set()
             current_candidates: list = []
             for _cname in _CURRENT_LOOKUP_NAMES:
-                _a = (self._find_register_by_name_with_fallback(_cname) or
-                      self._find_register_by_name(_cname))
-                if _a and _a not in seen_current_addrs:
-                    seen_current_addrs.add(_a)
-                    _v = self._get_register_value(_a)
-                    if _v is not None and abs(_v) <= _CURRENT_MAX_A:
-                        current_candidates.append((_a, _v))
-                        logger.debug(f"Battery current candidate reg {_a} ({_cname}): {_v}A")
+                # Same fix as voltage: iterate ALL addresses per name so the native
+                # 8000-range register is always evaluated alongside the VPP register.
+                for _a in self._find_all_registers_by_name(_cname):
+                    if _a not in seen_current_addrs:
+                        seen_current_addrs.add(_a)
+                        _v = self._get_register_value(_a)
+                        if _v is not None and abs(_v) <= _CURRENT_MAX_A:
+                            current_candidates.append((_a, _v))
+                            logger.debug(f"Battery current candidate reg {_a} ({_cname}): {_v}A")
 
             if current_candidates:
                 _best_addr, _best_val = max(current_candidates, key=lambda c: abs(c[1]))
