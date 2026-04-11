@@ -4,6 +4,91 @@
 
 ---
 
+## v0.7.1
+
+Issues: #249 · #242 · #212
+
+---
+
+### New Profiles
+
+- **SPA series — new profile (#249):** The SPA 3000–6000TL BL (AC-coupled battery storage,
+  no PV MPPT inputs) now has a dedicated profile. Previously it auto-detected as
+  MIN 7000-10000TL-X and all sensors read zero; with SPH-TL3 manually selected, AC voltage,
+  frequency, and load power also read zero because the SPA never populates the 0-124
+  register range. The new `spa_3000_6000_tl_bl` profile reads exclusively from the
+  1000-1124 range where the SPA keeps all its data. Load power is correctly sourced from
+  registers 1037/1038 (SPH-TL3 uses 1021/1022 for this, which are zero on the SPA).
+  Confirmed sensors: battery voltage/SOC/temp/type, charge/discharge power, power to grid,
+  load power, AC voltage (~216V at reg 1105), and the full energy breakdown set
+  (energy to user/grid today/total, battery charge/discharge today/total, load energy
+  today/total). Holding register layout (battery management, TOU time periods) is identical
+  to SPH-TL3.
+
+### Universal Register Scanner — Device Selector
+
+The Universal Register Scanner service now has a **Device** dropdown at the top of the service
+form. Selecting your configured inverter pre-fills all connection details (IP, port, serial path,
+baudrate, slave ID) and guarantees that the "CURRENTLY CONFIGURED PROFILE" and "CURRENT ENTITY
+VALUES" sections appear in the CSV output. Previously, entity values were only included when the
+scanner could match the connection parameters you typed against a running integration entry, which
+silently failed for serial connections if the device path differed even slightly. Manual IP/serial
+entry fields are still available for scanning a new inverter before it has been added to the
+integration.
+
+### Bug Fixes
+
+- **WIT 8K-HU — Battery voltage/current fix (take 2) (#247):** The v0.7.0 multi-candidate
+  selection was not actually comparing the VPP register (31214, spurious 5.2V) against the
+  native register (8034, correct 53.7V). The candidate loop used
+  `_find_register_by_name_with_fallback()` which filters down to a single address based on
+  the detected preferred range — so when the VPP range scored non-zero (because 31214 returns
+  a wrong-but-non-zero value), only reg 31214 was ever evaluated as a candidate and reg 8034
+  was never read. Fixed by replacing the single-address lookup with
+  `_find_all_registers_by_name()` so every matching address across all ranges is evaluated.
+  The 5.2V value at reg 31214 is then correctly discarded by the 10V plausibility floor and
+  the 53.7V from reg 8034 is selected. The same fix is applied to battery current.
+
+### Profile Fixes
+
+- **SPE 8000-12000 ES — register map corrected (#212):** The SPE profile previously inherited
+  the SPF register map wholesale. Cross-analysis of the Issue #212 daytime scan against actual
+  entity values (from the accompanying XLSX file) revealed several incorrect mappings:
+  - Registers 36/37 (`ac_input_power`) produce a 429 GW overflow on SPE — the value is a
+    signed 32-bit grid power register that the coordinator interprets as unsigned. These
+    registers have been removed from the profile until correct signed semantics are confirmed.
+  - Registers 64/65 (SPF: "AC discharge energy today") are **grid import energy today** on SPE.
+    Confirmed: 20.0 kWh scan value vs 19.8 kWh actual ✓
+  - Registers 66/67 (SPF: "AC discharge energy total") are **grid import energy total** on SPE.
+    Confirmed: 855.2 kWh ✓
+  - Registers 85/86 (SPF: "operational discharge energy today") are **load energy today** on SPE.
+    Confirmed: 21.3 kWh vs 20.9 kWh actual ✓
+  - Registers 87/88 (SPF: "operational discharge energy total") are **load energy total** on SPE.
+    Confirmed: 1028.3 kWh vs 1027.9 kWh actual ✓
+  - Registers 92–97 (generator discharge/power/voltage) removed — SPE has no generator input.
+  All confirmed registers (battery voltage 50.12 V, grid voltage 235.8 V, PV1/PV2 voltage/power,
+  temperatures, fan speeds, charge/discharge energy totals) remain correctly inherited from SPF.
+
+### Auto-Detection Fixes
+
+- **SPA auto-detection (#249):** SPA responds to all register ranges with zeros rather than
+  exceptions, causing it to fall through into the MIN detection branch. Detection now checks
+  register 1013 (battery voltage, always ~530 raw = 53 V on SPA) combined with register 38
+  (AC voltage in base range, always 0 on SPA). This check runs before the MIN series check.
+  SPH-TL3 is not affected — it always has register 38 > 0 (grid voltage present even at
+  night). SPH 3-6kW is not affected — its battery voltage is at register 13, not 1013.
+
+- **MIC misclassification of legacy string inverters fixed (#242):** Inverters using the
+  legacy 0-124 register range but lacking the 3000+ range were incorrectly detected as MIC
+  micro inverters if their PV voltage happened to be non-zero at register 3. MIC micro
+  inverters operate at low panel voltages (< 80 V raw). The detection now checks: if reg 3
+  raw > 800 (> 80 V) and the 3000+ range is absent, the device is a legacy string inverter,
+  not a MIC. It falls back to `min_7000_10000_tl_x` as the closest approximation and logs a
+  warning. A dedicated legacy profile for this firmware class (DM1.0, ~11 kW, 3 strings,
+  0-124 range only) is planned pending further scan data and model confirmation.
+
+---
+
 ## v0.7.0
 
 Issues: #174 · #131 · #212 · #225 · #240 · #243 · #244 · #247

@@ -90,11 +90,26 @@ update_register_map:
 
 export_register_dump:
   name: Universal Register Scanner
-  description: Scan ALL register ranges, auto-detect your inverter model, and export complete register dump to CSV. Supports both TCP and USB/Serial connections. Entity values are automatically included if you have a configured device with matching connection parameters. File saved to /config/growatt_register_scan_[timestamp].csv
+  description: >
+    Scan ALL register ranges, auto-detect your inverter model, and export a complete register dump
+    to CSV. Select a configured device below to automatically use its connection settings and include
+    current entity values in the scan. Alternatively leave the device blank and enter connection
+    parameters manually (useful for scanning a new inverter before adding it to the integration).
+    File saved to /config/growatt_register_scan_[timestamp].csv
   fields:
+    config_entry:
+      name: Device (recommended)
+      description: >
+        Select your Growatt inverter from the list. Connection details and current entity values
+        are pulled directly from the integration — no manual IP/serial entry needed.
+        Leave blank to enter connection parameters manually.
+      required: false
+      selector:
+        config_entry:
+          integration: growatt_modbus
     connection_type:
-      name: Connection Type
-      description: Select TCP (RS485-to-Ethernet adapter) or Serial (RS485-to-USB adapter)
+      name: Connection Type (manual only)
+      description: Select TCP or Serial. Ignored when a device is selected above.
       required: false
       default: "tcp"
       selector:
@@ -105,15 +120,15 @@ export_register_dump:
             - label: "Serial (USB)"
               value: "serial"
     host:
-      name: IP Address (TCP only)
-      description: IP address of your RS485-TCP adapter (required for TCP connection)
+      name: IP Address (manual TCP only)
+      description: IP address of your RS485-TCP adapter. Ignored when a device is selected above.
       required: false
       example: "192.168.1.60"
       selector:
         text:
     port:
-      name: Port (TCP only)
-      description: Modbus TCP port (usually 502, required for TCP connection)
+      name: Port (manual TCP only)
+      description: Modbus TCP port (usually 502). Ignored when a device is selected above.
       required: false
       default: 502
       selector:
@@ -122,15 +137,15 @@ export_register_dump:
           max: 65535
           mode: box
     device:
-      name: Serial Device (Serial only)
-      description: Serial port path for USB adapter (required for Serial connection)
+      name: Serial Device (manual Serial only)
+      description: Serial port path for USB adapter (e.g. /dev/ttyUSB0 or COM3). Ignored when a device is selected above.
       required: false
       example: "/dev/ttyUSB0 or COM3"
       selector:
         text:
     baudrate:
-      name: Baudrate (Serial only)
-      description: Serial communication speed (usually 9600 for Growatt)
+      name: Baudrate (manual Serial only)
+      description: Serial communication speed (usually 9600 for Growatt). Ignored when a device is selected above.
       required: false
       default: "9600"
       selector:
@@ -143,8 +158,8 @@ export_register_dump:
             - "57600"
             - "115200"
     slave_id:
-      name: Slave ID
-      description: Modbus slave/unit ID (usually 1)
+      name: Slave ID (manual only)
+      description: Modbus slave/unit ID (usually 1). Ignored when a device is selected above.
       required: false
       default: 1
       selector:

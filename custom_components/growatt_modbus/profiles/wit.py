@@ -425,6 +425,19 @@ WIT_4000_15000TL3 = {
                 }},
 
         # VPP Export Limitation Control
+        # NOTE: Register 30208 (Export Limitation Protection Mode) is NOT used by:
+        #   SPA 4000-10000TL3 BH-UP (DTC 3725), SPH 4000-10000TL3 BH-UP (DTC 3601),
+        #   WIT 100KTL3-H (DTC 5601), WIS 215KTL3 (DTC 5800)
+        # Mode descriptions for reference (VPP 2.01/2.03 documentation):
+        #   0: Default mode — meter disconnect limits output to Export Limitation Failure Power;
+        #      output > Export Limitation Power → inverter reports error and goes off-grid
+        #   1: Combine control mode — meter disconnect → error + off-grid within 5s;
+        #      anti-backflow failure → off-grid after 15s
+        #   2: Software control mode — meter disconnect reduces output to Failure Power in 15s;
+        #      output > Export Limit → reduces to Failure Power in 15s
+        #   3: Hardware control mode — meter disconnect → error + off-grid within 5s;
+        #      output > Export Limit → off-grid within 5s
+        # Register 30208 is not implemented here for WIT; if needed add to applicable DTC profiles only.
         30200: {'name': 'vpp_export_limit_enable', 'scale': 1, 'unit': '', 'access': 'RW',
                 'desc': 'Export limitation master switch',
                 'valid_range': (0, 1),
@@ -467,6 +480,12 @@ WIT_4000_15000TL3 = {
                 'valid_range': (10, 100), 'desc': 'Stop charging when SOC reaches this %'},
         30405: {'name': 'vpp_discharge_cutoff_soc', 'scale': 1, 'unit': '%', 'access': 'RW',
                 'valid_range': (10, 100), 'desc': 'Stop on-grid discharge when SOC drops to this %'},
+        # NOTE: Register 30406 (Load Priority Discharge Cutoff SOC) is device-type specific.
+        # Only applicable to Load-first mode (priority_mode=0) on:
+        #   SPH 3000-6000TL BL (DTC 3502), SPA 3000-6000TL BL (DTC 3735),
+        #   SPH (DTC 3750 variants), SPH 4000-10000TL3 BH-UP (DTC 3601)
+        # This register is NOT applicable to WIT (DTC 5603) and is therefore
+        # not implemented here. Add to sph/spa profiles if load-priority SOC cutoff control is needed.
 
         # AC Charging Enable (NOTE: May return "Illegal function" on some WIT firmware)
         30410: {'name': 'vpp_ac_charge_enable', 'scale': 1, 'unit': '', 'access': 'RW',
