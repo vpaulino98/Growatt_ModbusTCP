@@ -731,6 +731,7 @@ async def async_refine_dtc_detection(
     Refine DTC detection for models that share the same DTC code.
 
     Uses additional V2.01 register checks to differentiate (with legacy fallback):
+    - SPH-TL3 4-10kW (DTC 3601): Check protocol version (30099); downgrade to base if 0
     - SPH 3-6kW vs 7-10kW (DTC 3502): Check PV3 presence (31018 or 11)
     - MOD vs MID (DTC 5400): Check battery SOC (31217) or voltage (3169)
     - MIC vs MIN (DTC 5200): Check MIN range (31010 or 3003)
@@ -749,6 +750,29 @@ async def async_refine_dtc_detection(
         Refined profile key
     """
     try:
+        # DTC 3601: SPH-TL3 4-10kW — validate V2.01 protocol support via register 30099.
+        # Some units report DTC 3601 but protocol version 0 (legacy register layout, no V2.01).
+        # Reading 30099 here gives an early, data-validated downgrade before the protocol version
+        # step in async_determine_inverter_type(), protecting against timing blips where 30099
+        # transiently returns 201 at inverter startup then settles to 0.
+        if dtc_code == 3601:
+            try:
+                result = await hass.async_add_executor_job(
+                    client.read_holding_registers, 30099, 1
+                )
+                if result is not None and len(result) > 0 and result[0] == 0:
+                    _LOGGER.info(
+                        "DTC 3601 refinement: register 30099 = 0 (legacy protocol) "
+                        "→ using base sph_tl3_3000_10000 instead of V201"
+                    )
+                    return 'sph_tl3_3000_10000'
+                # Non-zero (e.g. 201): V2.01 confirmed, fall through to return initial_profile_key
+            except Exception as e:
+                _LOGGER.debug("DTC 3601 refinement: could not read register 30099: %s", e)
+                # Don't downgrade on read error — let protocol version step in
+                # async_determine_inverter_type() decide
+            return initial_profile_key
+
         # DTC 3502: SPH 3-6kW vs 7-10kW vs 8-10kW HU
         # Priority: Storage Range (HU) > PV3 (7-10kW) > No PV3 (3-6kW)
         if dtc_code == 3502:

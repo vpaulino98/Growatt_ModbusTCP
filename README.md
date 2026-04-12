@@ -1,7 +1,7 @@
 # Growatt Modbus Integration for Home Assistant ☀️
 
 ![HACS Badge](https://img.shields.io/badge/HACS-Custom-orange.svg)
-![Version](https://img.shields.io/badge/Version-0.7.1-blue.svg)
+![Version](https://img.shields.io/badge/Version-0.7.2-blue.svg)
 [![GitHub Issues](https://img.shields.io/github/issues/0xAHA/Growatt_ModbusTCP.svg)](https://github.com/0xAHA/Growatt_ModbusTCP/issues)
 [![GitHub Stars](https://img.shields.io/github/stars/0xAHA/Growatt_ModbusTCP.svg?style=social)](https://github.com/0xAHA/Growatt_ModbusTCP)
 
@@ -295,6 +295,10 @@ The integration pre-configures sensors with the correct `state_class` and `devic
 ## What's New
 
 See **[RELEASENOTES.md](RELEASENOTES.md)** for the full changelog.
+
+**v0.7.2 highlights:**
+
+- **SPH 10000TL3 BH-UP — wrongly assigned V201 profile fixed (#251):** Devices with DTC 3601 that return protocol version 0 (legacy register layout) were occasionally auto-detected as the V2.01 profile, causing `grid_voltage` and `grid_frequency` to read as zero. Affected users should remove and re-add the integration to trigger fresh detection.
 
 **v0.7.1 highlights:**
 

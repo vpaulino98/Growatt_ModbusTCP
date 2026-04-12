@@ -14,6 +14,7 @@ import homeassistant.helpers.config_validation as cv
 
 from .const import DOMAIN, CONF_INVERTER_SERIES
 from .device_profiles import get_display_name_for_profile, get_profile
+from .auto_detection import convert_to_legacy_profile
 
 # Import register maps for "Suggested Match" column
 try:
@@ -1381,18 +1382,45 @@ def _detect_inverter_model(register_data: Dict[int, Dict[str, Any]]) -> Dict[str
             detection["confidence"] = "Very High"
             detection["reasoning"].append(f"✓ DTC {dtc_code} matches: {model_name}")
             detection["reasoning"].append("  → Auto-detection via DTC is most reliable method")
+
+            # Apply protocol version downgrade BEFORE returning — mirrors actual HA detection.
+            # Must check here (not in the standalone block below) because the early return at
+            # the end of this section exits before that block runs.
+            # Fix for issue #251: use `is not None` (not truthy) so value=0 is handled correctly.
+            proto_entry = register_data.get(30099, {})
+            if proto_entry.get('status') == 'success' and proto_entry.get('value') is not None:
+                proto_ver = proto_entry['value']
+                detection["protocol_version"] = proto_ver
+                if proto_ver == 0:
+                    legacy_key = convert_to_legacy_profile(profile_key)
+                    if legacy_key != profile_key:
+                        detection["profile_key"] = legacy_key
+                        detection["confidence"] = "High"
+                        detection["reasoning"].append(
+                            f"⚠ Register 30099 = 0 (legacy protocol) "
+                            f"→ downgraded from {profile_key} to {legacy_key}"
+                        )
+                elif proto_ver >= 100:
+                    proto_str = f"{proto_ver // 100}.{proto_ver % 100:02d}"
+                    detection["reasoning"].append(
+                        f"✓ Protocol Version: V{proto_str} (register 30099 = {proto_ver})"
+                    )
+                    if proto_ver >= 201:
+                        detection["reasoning"].append(f"  → VPP Protocol V{proto_str} - supports advanced features")
         else:
             detection["reasoning"].append(f"⚠ Unknown DTC code {dtc_code} - not in supported models")
 
-    # Check for protocol version (holding register 30099)
-    if 30099 in register_data and register_data[30099]['status'] == 'success' and register_data[30099]['value']:
-        protocol_ver = register_data[30099]['value']
-        detection["protocol_version"] = protocol_ver
-        protocol_str = f"{protocol_ver // 100}.{protocol_ver % 100:02d}" if protocol_ver >= 100 else str(protocol_ver)
-        detection["reasoning"].append(f"✓ Protocol Version: {protocol_str} (register 30099 = {protocol_ver})")
+    # Check for protocol version (holding register 30099) — for non-DTC detections only.
+    # (DTC detections handle this inline above before early return.)
+    if detection["confidence"] != "Very High":
+        if 30099 in register_data and register_data[30099]['status'] == 'success' and register_data[30099]['value'] is not None:
+            protocol_ver = register_data[30099]['value']
+            detection["protocol_version"] = protocol_ver
+            protocol_str = f"{protocol_ver // 100}.{protocol_ver % 100:02d}" if protocol_ver >= 100 else str(protocol_ver)
+            detection["reasoning"].append(f"✓ Protocol Version: {protocol_str} (register 30099 = {protocol_ver})")
 
-        if protocol_ver >= 201:
-            detection["reasoning"].append(f"  → VPP Protocol V{protocol_str} - supports advanced features")
+            if protocol_ver >= 201:
+                detection["reasoning"].append(f"  → VPP Protocol V{protocol_str} - supports advanced features")
 
     # If DTC detected model, skip other detection logic
     if detection["confidence"] == "Very High":
