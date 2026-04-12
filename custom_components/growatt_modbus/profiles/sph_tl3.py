@@ -142,6 +142,22 @@ SPH_TL3_3000_10000 = {
         0: {'name': 'on_off', 'scale': 1, 'unit': '', 'access': 'RW', 'desc': '0=Off, 1=On'},
         1008: {'name': 'system_enable', 'scale': 1, 'unit': '', 'access': 'RW'},
 
+        # Max Output Power Rate
+        3: {'name': 'max_output_power_rate', 'scale': 1, 'unit': '%', 'access': 'RW',
+            'valid_range': (0, 100),
+            'desc': 'Maximum output power limitation (0-100%)'},
+
+        # Export Limit Control
+        122: {'name': 'export_limit_mode', 'scale': 1, 'unit': '', 'access': 'RW',
+              'desc': 'Export limit mode: 0=Disabled, 1=RS485'},
+        123: {'name': 'export_limit_power', 'scale': 0.1, 'unit': '%', 'access': 'RW',
+              'desc': 'Export limit power percentage (0-100%)'},
+
+        # Load First Battery Minimum SOC
+        608: {'name': 'load_first_battery_minimum_soc', 'scale': 1, 'unit': '%', 'access': 'RW',
+              'valid_range': (10, 100),
+              'desc': 'Minimum battery SOC in Load First mode — inverter stops discharging below this level (10-100%)'},
+
         # Battery Management Control
         1044: {'name': 'priority_mode', 'scale': 1, 'unit': '', 'access': 'RW',
                'desc': 'Priority mode selection',
@@ -272,6 +288,7 @@ SPH_TL3_3000_10000_V201 = {
         31203: {'name': 'battery_charge_power_low', 'scale': 1, 'unit': '', 'pair': 31202, 'combined_scale': 0.1, 'combined_unit': 'W'},
         31214: {'name': 'battery_voltage_vpp', 'scale': 0.1, 'unit': 'V', 'maps_to': 'battery_voltage', 'signed': True},
         31217: {'name': 'battery_soc_vpp', 'scale': 1, 'unit': '%', 'maps_to': 'battery_soc'},
+        31218: {'name': 'battery_soh', 'scale': 1, 'unit': '%', 'desc': 'Battery state of health'},
         31222: {'name': 'battery_temp_vpp', 'scale': 0.1, 'unit': '°C', 'maps_to': 'battery_temp', 'signed': True},
 
         # Battery Cluster 2 State (31300-31323)

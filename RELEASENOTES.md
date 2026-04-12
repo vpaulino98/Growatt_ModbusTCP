@@ -4,6 +4,19 @@
 
 ---
 
+## vNEXT
+
+---
+
+- ** SPH-TL3 - adding elements from SPH, which are relevant and tested working also on SPH-TL3: **
+    specifically:
+     - Max Output Power Rate
+     - Export Limit Control
+     - Load First Battery Minimum SOC
+     - Battery state of health
+
+---
+
 ## v0.7.2
 
 Issues: #251 · #249 · #245 · #228
