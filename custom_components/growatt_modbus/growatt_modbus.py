@@ -1278,23 +1278,34 @@ class GrowattModbus:
             power_to_user_addr = self._find_register_by_name('power_to_user_low')
             power_to_load_addr = self._find_register_by_name('power_to_load_low')
 
-            # power_to_grid: prefer native 3044, fall back to VPP meter_power (31113 maps_to power_to_grid_low)
-            # On some MOD firmware the 3000-range registers return 0 while the VPP meter registers are correct.
+            # power_to_grid: prefer native 3044, fall back to VPP active_power (31101 maps_to power_to_grid_low)
+            # On some MID/MOD V2.01 firmware the 3000-range registers return 0 while VPP registers are correct.
             power_to_grid_addr = self._find_register_by_name('power_to_grid_low')
             if power_to_grid_addr:
                 ptg_val = self._get_register_value(power_to_grid_addr)
                 if ptg_val is None or ptg_val == 0.0:
-                    # Try VPP fallback (31113 maps_to='power_to_grid_low' in MOD profile)
+                    # Try VPP fallback (31101 maps_to='power_to_grid_low' in MID/MOD V2.01 profile)
                     vpp_addr = self._find_register_by_name_with_fallback('power_to_grid_low')
                     if vpp_addr and vpp_addr != power_to_grid_addr:
                         vpp_val = self._get_register_value(vpp_addr)
                         if vpp_val is not None and vpp_val != 0.0:
                             ptg_val = vpp_val
-                            logger.debug(f"power_to_grid 3044=0, using VPP meter reg {vpp_addr}: {ptg_val}W")
+                            logger.debug(f"power_to_grid 3044=0, using VPP active power reg {vpp_addr}: {ptg_val}W")
                 data.power_to_grid = ptg_val if ptg_val is not None else 0.0
 
+            # power_to_user: prefer native 3042, fall back to VPP meter_power (31113 maps_to power_to_user_low)
+            # On some MID/MOD V2.01 firmware the 3000-range registers return 0 while VPP registers are correct.
             if power_to_user_addr:
-                data.power_to_user = self._get_register_value(power_to_user_addr) or 0.0
+                ptu_val = self._get_register_value(power_to_user_addr)
+                if ptu_val is None or ptu_val == 0.0:
+                    # Try VPP fallback (31113 maps_to='power_to_user_low' in MID/MOD V2.01 profile)
+                    vpp_addr = self._find_register_by_name_with_fallback('power_to_user_low')
+                    if vpp_addr and vpp_addr != power_to_user_addr:
+                        vpp_val = self._get_register_value(vpp_addr)
+                        if vpp_val is not None and vpp_val != 0.0:
+                            ptu_val = vpp_val
+                            logger.debug(f"power_to_user 3042=0, using VPP meter reg {vpp_addr}: {ptu_val}W")
+                data.power_to_user = ptu_val if ptu_val is not None else 0.0
             if power_to_load_addr:
                 data.power_to_load = self._get_register_value(power_to_load_addr) or 0.0
             

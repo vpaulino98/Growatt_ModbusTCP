@@ -4,6 +4,62 @@
 
 ---
 
+## v0.7.2
+
+Issues: #251 · #249 · #245 · #228
+
+---
+
+- **MID/MOD V2.01 — corrected VPP 31100-31113 register mappings (#245, #228):** The VPP 2.01
+  protocol specification (confirmed against MID 20KTL3-XH scan data in #245) defines the
+  31100-31113 range as:
+  - **31100/31101**: Active power INT32 (positive = export, negative = import) — was previously
+    mapped as per-phase voltages, which is incorrect. Now mapped as `power_to_grid` fallback.
+  - **31105**: Grid frequency (×0.01 Hz) — was unmapped; now mapped as `ac_frequency_vpp`.
+  - **31106-31108**: AB/BC/CA line voltages (×0.1V) — were unmapped; now mapped as
+    `line_voltage_rs/st/tr` for three-phase line voltage sensors.
+  - **31109-31111**: Phase A/B/C currents (INT16 signed, ×0.1A) — were unmapped; now mapped
+    as `ac_current_r/s/t`.
+  - **31112/31113**: Meter power INT32 (positive = **import** per spec item 55) — was
+    incorrectly mapped as `power_to_grid` fallback (wrong sign direction). Now correctly
+    mapped as `power_to_user`. This also retroactively fixes the #228 MOD grid power
+    "wrong direction" symptom: the old #228 workaround happened to paper over the issue in
+    some scenarios, but the root cause was using an import-direction register as the export
+    fallback.
+  - **31102/31103**: Reactive power INT32 (×0.1VA) — added as diagnostic registers.
+  - **31118-31125**: Energy counters (UINT32, 0.1kWh) — were incorrectly mapped as load
+    power (31118/31119) and solar energy today/total (31120-31123). Per spec items 60-63
+    these are grid import/export energy today/total. Corrected and 31124/31125 (total grid
+    export) added. The VPP values act as fallbacks behind the 3000-range energy counters
+    (3067-3074) which take priority in the coordinator's multi-range lookup.
+
+- **SPA — additional sensors from extended scan (#249):** Cross-analysis of 15 time-of-day
+  scans (09:34–20:41) against energy balance verification confirmed three missing sensors:
+  - **Grid import power** (`power_to_user`): register 1021/1022 = PacToUser Total (×0.1 W).
+    Confirmed via energy balance: battery_discharge + grid_import = load ✓ at every scan.
+    Note: SPH-TL3 uses the same register addresses (1021/1022) for load power — semantics
+    differ because SPA measures the grid connection point bidirectionally.
+  - **Grid frequency** (`ac_frequency`): register 1113 (×0.01 Hz). Confirmed 49.86–50.00 Hz
+    variation consistent with UK grid frequency fluctuation.
+  - **Battery current** (`battery_current`): register 1088 (×0.01 A, signed). Confirmed:
+    +14.0A during 760W charge (÷54.3V = 14.0A ✓); −58.5A during 3050W discharge
+    (÷52.5V = 58.1A ✓). Negative = discharging per HA convention.
+
+- **SPH 10000TL3 BH-UP — wrongly assigned V201 profile (#251):** Devices with DTC 3601 that
+  return protocol version 0 from register 30099 (indicating legacy register layout, no V2.01
+  support) were occasionally auto-detected as `sph_tl3_3000_10000_v201` instead of
+  `sph_tl3_3000_10000`, causing `grid_voltage` and `grid_frequency` to read as zero despite
+  the inverter actively exporting power. Two fixes applied: (1) the DTC 3601 refinement step
+  in `async_refine_dtc_detection()` now explicitly reads register 30099 and returns the base
+  profile immediately if it returns 0, ahead of the general protocol version check; (2) the
+  diagnostic scanner's "Suggested Profile Key" now correctly applies the same protocol-version
+  downgrade logic so scan output matches what actual HA detection would choose (previously the
+  scanner silently skipped register 30099 when its value was 0 due to a falsy-check bug, and
+  returned the V201 profile key before the protocol version block could act on it). **Affected
+  users should remove and re-add the integration** to trigger fresh auto-detection.
+
+---
+
 ## v0.7.1
 
 Issues: #249 · #242 · #212
@@ -241,9 +297,8 @@ Set the global **Priority Mode** (register 1044) to `Battery First` or `Grid Fir
 
 **MOD GEN4 (TL3-XH profile only):**
 
-
 | Entity                   | Type              | Register      | New? |
-| -------------------------- | ------------------- | --------------- | ------ |
+| ------------------------ | ----------------- | ------------- | ---- |
 | Allow Grid Charge        | Select            | 3049          | New  |
 | TOU Period 5 Start / End | Time              | 3050, 3051    | New  |
 | TOU Period 5 Priority    | Select            | 3050 (bits)   | New  |
@@ -252,9 +307,8 @@ Set the global **Priority Mode** (register 1044) to `Battery First` or `Grid Fir
 
 **SPH GEN3 (3000–10000 TL profiles):**
 
-
 | Entity group                     | Type         | Registers        | New? |
-| ---------------------------------- | -------------- | ------------------ | ------ |
+| -------------------------------- | ------------ | ---------------- | ---- |
 | Batt First Period 4–6 Start/End | Time (×6)   | 1017–1025       | New  |
 | Batt First Period 4–6 Enable    | Select (×3) | 1019, 1022, 1025 | New  |
 | Grid First Period 4–6 Start/End | Time (×6)   | 1026–1034       | New  |
