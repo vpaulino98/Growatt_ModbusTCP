@@ -138,6 +138,7 @@ class GrowattGenericNumber(CoordinatorEntity, NumberEntity):
             'export_limit_w': 'VPP Export Limit (W)',
             'max_output_power_rate': 'Max Output Power Rate',
             'vpp_export_limit_power_rate': 'VPP Export Limit Power Rate',
+            'load_first_battery_minimum_soc': 'Load First Battery Minimum SOC',
         }
         friendly_name = friendly_overrides.get(control_name, control_name.replace('_', ' ').title())
         self._attr_name = friendly_name
@@ -159,6 +160,7 @@ class GrowattGenericNumber(CoordinatorEntity, NumberEntity):
             'bat_low_to_uti': 'mdi:battery-alert',
             'ac_to_bat_volt': 'mdi:battery-charging',
             'vpp_export_limit_power_rate': 'mdi:transmission-tower-export',
+            'load_first_battery_minimum_soc': 'mdi:battery-sync',
         }
         return icon_map.get(control_name, 'mdi:tune')
 

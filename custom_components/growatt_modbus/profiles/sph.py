@@ -53,6 +53,12 @@ SPH_3000_6000 = {
         62: {'name': 'backup_frequency', 'scale': 0.01, 'unit': 'Hz', 'desc': 'Backup output frequency'},
         64: {'name': 'load_power', 'scale': 1, 'unit': 'W', 'desc': 'Load consumption power'},
 
+        # PV energy total — raw DC-side generation, unaffected by battery cycling (#243)
+        # Protocol V1.39 regs 91-92: Epv_total H/L (0.1 kWh)
+        # Use this for HA energy dashboard; energy_total (reg 55/56) is a net calculated value
+        91: {'name': 'pv_energy_total_high', 'scale': 1, 'unit': '', 'pair': 92, 'desc': 'PV energy total lifetime HIGH'},
+        92: {'name': 'pv_energy_total_low', 'scale': 1, 'unit': '', 'pair': 91, 'combined_scale': 0.1, 'combined_unit': 'kWh', 'desc': 'PV energy total lifetime LOW'},
+
         # Temperatures
         93: {'name': 'inverter_temp', 'scale': 0.1, 'unit': '°C', 'signed': True},
         94: {'name': 'ipm_temp', 'scale': 0.1, 'unit': '°C', 'signed': True},
@@ -70,6 +76,20 @@ SPH_3000_6000 = {
         # Basic Control
         0: {'name': 'on_off', 'scale': 1, 'unit': '', 'access': 'RW', 'desc': '0=Off, 1=On'},
         3: {'name': 'active_power_rate', 'scale': 1, 'unit': '%', 'access': 'RW'},
+
+        # Export Limit Control
+        122: {'name': 'export_limit_mode', 'scale': 1, 'unit': '', 'access': 'RW',
+              'desc': 'Export limit mode: 0=Disabled, 1=RS485'},
+        123: {'name': 'export_limit_power', 'scale': 0.1, 'unit': '%', 'access': 'RW',
+              'desc': 'Export limit power percentage (0-100%)'},
+
+        # Load First Battery Minimum SOC
+        # Not in official Growatt Modbus protocol documentation.
+        # Source: https://www.photovoltaikforum.com/thread/192228-growatt-sph-modbus-rtu-rj45-pinout-und-register-beschreibung/?postID=3017838#post3017838
+        # Also confirmed by homeassistant-solax-modbus plugin_growatt.py (register 608, GEN3/SPH).
+        608: {'name': 'load_first_battery_minimum_soc', 'scale': 1, 'unit': '%', 'access': 'RW',
+              'valid_range': (10, 100),
+              'desc': 'Minimum battery SOC in Load First mode — inverter stops discharging below this level (10-100%)'},
 
         # Battery Management Control (1000+ range)
         1044: {'name': 'priority_mode', 'scale': 1, 'unit': '', 'access': 'RW',
@@ -144,6 +164,39 @@ SPH_3000_6000 = {
                    0: 'Disabled',
                    1: 'Enabled'
                }},
+
+        # Battery First extended time slots 4-6 (GEN3, registers 1017-1025)
+        1017: {'name': 'batt_first_time_period_4_start',  'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Battery First period 4 start (hex-packed)'},
+        1018: {'name': 'batt_first_time_period_4_end',    'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Battery First period 4 end (hex-packed)'},
+        1019: {'name': 'batt_first_time_period_4_enable', 'scale': 1, 'unit': '', 'access': 'RW', 'values': {0: 'Disabled', 1: 'Enabled'}, 'desc': 'Enable Battery First period 4'},
+        1020: {'name': 'batt_first_time_period_5_start',  'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Battery First period 5 start (hex-packed)'},
+        1021: {'name': 'batt_first_time_period_5_end',    'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Battery First period 5 end (hex-packed)'},
+        1022: {'name': 'batt_first_time_period_5_enable', 'scale': 1, 'unit': '', 'access': 'RW', 'values': {0: 'Disabled', 1: 'Enabled'}, 'desc': 'Enable Battery First period 5'},
+        1023: {'name': 'batt_first_time_period_6_start',  'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Battery First period 6 start (hex-packed)'},
+        1024: {'name': 'batt_first_time_period_6_end',    'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Battery First period 6 end (hex-packed)'},
+        1025: {'name': 'batt_first_time_period_6_enable', 'scale': 1, 'unit': '', 'access': 'RW', 'values': {0: 'Disabled', 1: 'Enabled'}, 'desc': 'Enable Battery First period 6'},
+
+        # Grid First extended time slots 4-6 (GEN3, registers 1026-1034)
+        1026: {'name': 'grid_first_time_period_4_start',  'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Grid First period 4 start (hex-packed)'},
+        1027: {'name': 'grid_first_time_period_4_end',    'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Grid First period 4 end (hex-packed)'},
+        1028: {'name': 'grid_first_time_period_4_enable', 'scale': 1, 'unit': '', 'access': 'RW', 'values': {0: 'Disabled', 1: 'Enabled'}, 'desc': 'Enable Grid First period 4'},
+        1029: {'name': 'grid_first_time_period_5_start',  'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Grid First period 5 start (hex-packed)'},
+        1030: {'name': 'grid_first_time_period_5_end',    'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Grid First period 5 end (hex-packed)'},
+        1031: {'name': 'grid_first_time_period_5_enable', 'scale': 1, 'unit': '', 'access': 'RW', 'values': {0: 'Disabled', 1: 'Enabled'}, 'desc': 'Enable Grid First period 5'},
+        1032: {'name': 'grid_first_time_period_6_start',  'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Grid First period 6 start (hex-packed)'},
+        1033: {'name': 'grid_first_time_period_6_end',    'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Grid First period 6 end (hex-packed)'},
+        1034: {'name': 'grid_first_time_period_6_enable', 'scale': 1, 'unit': '', 'access': 'RW', 'values': {0: 'Disabled', 1: 'Enabled'}, 'desc': 'Enable Grid First period 6'},
+
+        # Grid First extended time slots 7-9 (GEN3, registers 1080-1088)
+        1080: {'name': 'grid_first_time_period_7_start',  'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Grid First period 7 start (hex-packed)'},
+        1081: {'name': 'grid_first_time_period_7_end',    'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Grid First period 7 end (hex-packed)'},
+        1082: {'name': 'grid_first_time_period_7_enable', 'scale': 1, 'unit': '', 'access': 'RW', 'values': {0: 'Disabled', 1: 'Enabled'}, 'desc': 'Enable Grid First period 7'},
+        1083: {'name': 'grid_first_time_period_8_start',  'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Grid First period 8 start (hex-packed)'},
+        1084: {'name': 'grid_first_time_period_8_end',    'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Grid First period 8 end (hex-packed)'},
+        1085: {'name': 'grid_first_time_period_8_enable', 'scale': 1, 'unit': '', 'access': 'RW', 'values': {0: 'Disabled', 1: 'Enabled'}, 'desc': 'Enable Grid First period 8'},
+        1086: {'name': 'grid_first_time_period_9_start',  'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Grid First period 9 start (hex-packed)'},
+        1087: {'name': 'grid_first_time_period_9_end',    'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Grid First period 9 end (hex-packed)'},
+        1088: {'name': 'grid_first_time_period_9_enable', 'scale': 1, 'unit': '', 'access': 'RW', 'values': {0: 'Disabled', 1: 'Enabled'}, 'desc': 'Enable Grid First period 9'},
     }
 }
 
@@ -217,6 +270,20 @@ SPH_7000_10000 = {
         0: {'name': 'on_off', 'scale': 1, 'unit': '', 'access': 'RW', 'desc': '0=Off, 1=On'},
         3: {'name': 'active_power_rate', 'scale': 1, 'unit': '%', 'access': 'RW'},
 
+        # Export Limit Control
+        122: {'name': 'export_limit_mode', 'scale': 1, 'unit': '', 'access': 'RW',
+              'desc': 'Export limit mode: 0=Disabled, 1=RS485'},
+        123: {'name': 'export_limit_power', 'scale': 0.1, 'unit': '%', 'access': 'RW',
+              'desc': 'Export limit power percentage (0-100%)'},
+
+        # Load First Battery Minimum SOC
+        # Not in official Growatt Modbus protocol documentation.
+        # Source: https://www.photovoltaikforum.com/thread/192228-growatt-sph-modbus-rtu-rj45-pinout-und-register-beschreibung/?postID=3017838#post3017838
+        # Also confirmed by homeassistant-solax-modbus plugin_growatt.py (register 608, GEN3/SPH).
+        608: {'name': 'load_first_battery_minimum_soc', 'scale': 1, 'unit': '%', 'access': 'RW',
+              'valid_range': (10, 100),
+              'desc': 'Minimum battery SOC in Load First mode — inverter stops discharging below this level (10-100%)'},
+
         # Battery Management Control (1000+ range)
         1044: {'name': 'priority_mode', 'scale': 1, 'unit': '', 'access': 'RW',
                'desc': 'Priority mode selection',
@@ -290,6 +357,39 @@ SPH_7000_10000 = {
                    0: 'Disabled',
                    1: 'Enabled'
                }},
+
+        # Battery First extended time slots 4-6 (GEN3, registers 1017-1025)
+        1017: {'name': 'batt_first_time_period_4_start',  'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Battery First period 4 start (hex-packed)'},
+        1018: {'name': 'batt_first_time_period_4_end',    'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Battery First period 4 end (hex-packed)'},
+        1019: {'name': 'batt_first_time_period_4_enable', 'scale': 1, 'unit': '', 'access': 'RW', 'values': {0: 'Disabled', 1: 'Enabled'}, 'desc': 'Enable Battery First period 4'},
+        1020: {'name': 'batt_first_time_period_5_start',  'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Battery First period 5 start (hex-packed)'},
+        1021: {'name': 'batt_first_time_period_5_end',    'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Battery First period 5 end (hex-packed)'},
+        1022: {'name': 'batt_first_time_period_5_enable', 'scale': 1, 'unit': '', 'access': 'RW', 'values': {0: 'Disabled', 1: 'Enabled'}, 'desc': 'Enable Battery First period 5'},
+        1023: {'name': 'batt_first_time_period_6_start',  'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Battery First period 6 start (hex-packed)'},
+        1024: {'name': 'batt_first_time_period_6_end',    'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Battery First period 6 end (hex-packed)'},
+        1025: {'name': 'batt_first_time_period_6_enable', 'scale': 1, 'unit': '', 'access': 'RW', 'values': {0: 'Disabled', 1: 'Enabled'}, 'desc': 'Enable Battery First period 6'},
+
+        # Grid First extended time slots 4-6 (GEN3, registers 1026-1034)
+        1026: {'name': 'grid_first_time_period_4_start',  'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Grid First period 4 start (hex-packed)'},
+        1027: {'name': 'grid_first_time_period_4_end',    'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Grid First period 4 end (hex-packed)'},
+        1028: {'name': 'grid_first_time_period_4_enable', 'scale': 1, 'unit': '', 'access': 'RW', 'values': {0: 'Disabled', 1: 'Enabled'}, 'desc': 'Enable Grid First period 4'},
+        1029: {'name': 'grid_first_time_period_5_start',  'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Grid First period 5 start (hex-packed)'},
+        1030: {'name': 'grid_first_time_period_5_end',    'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Grid First period 5 end (hex-packed)'},
+        1031: {'name': 'grid_first_time_period_5_enable', 'scale': 1, 'unit': '', 'access': 'RW', 'values': {0: 'Disabled', 1: 'Enabled'}, 'desc': 'Enable Grid First period 5'},
+        1032: {'name': 'grid_first_time_period_6_start',  'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Grid First period 6 start (hex-packed)'},
+        1033: {'name': 'grid_first_time_period_6_end',    'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Grid First period 6 end (hex-packed)'},
+        1034: {'name': 'grid_first_time_period_6_enable', 'scale': 1, 'unit': '', 'access': 'RW', 'values': {0: 'Disabled', 1: 'Enabled'}, 'desc': 'Enable Grid First period 6'},
+
+        # Grid First extended time slots 7-9 (GEN3, registers 1080-1088)
+        1080: {'name': 'grid_first_time_period_7_start',  'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Grid First period 7 start (hex-packed)'},
+        1081: {'name': 'grid_first_time_period_7_end',    'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Grid First period 7 end (hex-packed)'},
+        1082: {'name': 'grid_first_time_period_7_enable', 'scale': 1, 'unit': '', 'access': 'RW', 'values': {0: 'Disabled', 1: 'Enabled'}, 'desc': 'Enable Grid First period 7'},
+        1083: {'name': 'grid_first_time_period_8_start',  'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Grid First period 8 start (hex-packed)'},
+        1084: {'name': 'grid_first_time_period_8_end',    'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Grid First period 8 end (hex-packed)'},
+        1085: {'name': 'grid_first_time_period_8_enable', 'scale': 1, 'unit': '', 'access': 'RW', 'values': {0: 'Disabled', 1: 'Enabled'}, 'desc': 'Enable Grid First period 8'},
+        1086: {'name': 'grid_first_time_period_9_start',  'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Grid First period 9 start (hex-packed)'},
+        1087: {'name': 'grid_first_time_period_9_end',    'scale': 1, 'unit': '', 'access': 'RW', 'valid_range': (0, 5947), 'desc': 'Grid First period 9 end (hex-packed)'},
+        1088: {'name': 'grid_first_time_period_9_enable', 'scale': 1, 'unit': '', 'access': 'RW', 'values': {0: 'Disabled', 1: 'Enabled'}, 'desc': 'Enable Grid First period 9'},
     }
 }
 

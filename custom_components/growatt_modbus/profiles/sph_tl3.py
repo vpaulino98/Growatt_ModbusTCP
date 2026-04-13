@@ -106,14 +106,18 @@ SPH_TL3_3000_10000 = {
         1041: {'name': 'battery_type', 'scale': 1, 'unit': ''},
         
         # Power Flow
-        1015: {'name': 'power_to_user_high', 'scale': 1, 'unit': '', 'pair': 1016},
+        # Per Growatt Modbus Protocol II V1.24:
+        # 1021: PactouserTotal  = AC power to user total (grid import, positive = importing)
+        # 1029: Pactogrid total = AC power to grid total (grid export, positive = exporting)
+        # 1037: PLocalLoad total = INV power to local load total
+        1015: {'name': 'power_to_user_high', 'scale': 1, 'unit': '', 'pair': 1016, 'desc': 'Power imported from grid HIGH (legacy register)'},
         1016: {'name': 'power_to_user_low', 'scale': 1, 'unit': '', 'pair': 1015, 'combined_scale': 0.1, 'combined_unit': 'W'},
-        1021: {'name': 'power_to_load_high', 'scale': 1, 'unit': '', 'pair': 1022},
-        1022: {'name': 'power_to_load_low', 'scale': 1, 'unit': '', 'pair': 1021, 'combined_scale': 0.1, 'combined_unit': 'W'},
-        1029: {'name': 'power_to_grid_high', 'scale': 1, 'unit': '', 'pair': 1030},
+        1021: {'name': 'power_to_user_total_high', 'scale': 1, 'unit': '', 'pair': 1022, 'desc': 'AC power to user total H (PactouserTotal = grid import)', 'maps_to': 'power_to_user'},
+        1022: {'name': 'power_to_user_total_low', 'scale': 1, 'unit': '', 'pair': 1021, 'combined_scale': 0.1, 'combined_unit': 'W'},
+        1029: {'name': 'power_to_grid_high', 'scale': 1, 'unit': '', 'pair': 1030, 'desc': 'AC power to grid total H (Pactogrid total)'},
         1030: {'name': 'power_to_grid_low', 'scale': 1, 'unit': '', 'pair': 1029, 'combined_scale': 0.1, 'combined_unit': 'W', 'signed': True},
-        1037: {'name': 'self_consumption_power_high', 'scale': 1, 'unit': '', 'pair': 1038},
-        1038: {'name': 'self_consumption_power_low', 'scale': 1, 'unit': '', 'pair': 1037, 'combined_scale': 0.1, 'combined_unit': 'W'},
+        1037: {'name': 'power_to_load_high', 'scale': 1, 'unit': '', 'pair': 1038, 'desc': 'INV power to local load total H (PLocalLoad total)'},
+        1038: {'name': 'power_to_load_low', 'scale': 1, 'unit': '', 'pair': 1037, 'combined_scale': 0.1, 'combined_unit': 'W'},
         1039: {'name': 'self_consumption_percentage', 'scale': 1, 'unit': '%'},
         
         # Energy Breakdown
@@ -141,6 +145,22 @@ SPH_TL3_3000_10000 = {
     'holding_registers': {
         0: {'name': 'on_off', 'scale': 1, 'unit': '', 'access': 'RW', 'desc': '0=Off, 1=On'},
         1008: {'name': 'system_enable', 'scale': 1, 'unit': '', 'access': 'RW'},
+
+        # Max Output Power Rate
+        3: {'name': 'max_output_power_rate', 'scale': 1, 'unit': '%', 'access': 'RW',
+            'valid_range': (0, 100),
+            'desc': 'Maximum output power limitation (0-100%)'},
+
+        # Export Limit Control
+        122: {'name': 'export_limit_mode', 'scale': 1, 'unit': '', 'access': 'RW',
+              'desc': 'Export limit mode: 0=Disabled, 1=RS485'},
+        123: {'name': 'export_limit_power', 'scale': 0.1, 'unit': '%', 'access': 'RW',
+              'desc': 'Export limit power percentage (0-100%)'},
+
+        # Load First Battery Minimum SOC
+        608: {'name': 'load_first_battery_minimum_soc', 'scale': 1, 'unit': '%', 'access': 'RW',
+              'valid_range': (10, 100),
+              'desc': 'Minimum battery SOC in Load First mode — inverter stops discharging below this level (10-100%)'},
 
         # Battery Management Control
         1044: {'name': 'priority_mode', 'scale': 1, 'unit': '', 'access': 'RW',
@@ -272,6 +292,7 @@ SPH_TL3_3000_10000_V201 = {
         31203: {'name': 'battery_charge_power_low', 'scale': 1, 'unit': '', 'pair': 31202, 'combined_scale': 0.1, 'combined_unit': 'W'},
         31214: {'name': 'battery_voltage_vpp', 'scale': 0.1, 'unit': 'V', 'maps_to': 'battery_voltage', 'signed': True},
         31217: {'name': 'battery_soc_vpp', 'scale': 1, 'unit': '%', 'maps_to': 'battery_soc'},
+        31218: {'name': 'battery_soh', 'scale': 1, 'unit': '%', 'desc': 'Battery state of health'},
         31222: {'name': 'battery_temp_vpp', 'scale': 0.1, 'unit': '°C', 'maps_to': 'battery_temp', 'signed': True},
 
         # Battery Cluster 2 State (31300-31323)

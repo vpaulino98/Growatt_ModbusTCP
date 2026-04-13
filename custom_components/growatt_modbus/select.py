@@ -86,6 +86,10 @@ async def async_setup_entry(
         if register_num not in holding_registers:
             continue  # Skip if register not in this profile
 
+        # allow_grid_charge is handled by GrowattModAllowGridChargeSelect below
+        if control_name == 'allow_grid_charge':
+            continue
+
         # VPP export limit requires live confirmation that the inverter responds to 30200
         if control_name == 'vpp_export_limit_enable':
             if coordinator.data is None or not coordinator.data.vpp_export_limit_available:
@@ -103,12 +107,18 @@ async def async_setup_entry(
         )
         _LOGGER.info("%s control enabled (register %d found)", control_name, register_num)
 
-    # MOD TL3-XH TOU priority and enable selects (4 priority + 4 enable = 8 entities)
+    # MOD TL3-XH TOU priority and enable selects (9 periods × 2 = 18 entities)
     if 3038 in holding_registers:
         for period_def in MOD_TOU_PERIODS:
             entities.append(GrowattModTouPriority(coordinator, config_entry, period_def))
             entities.append(GrowattModTouEnable(coordinator, config_entry, period_def))
-        _LOGGER.info("MOD TOU priority/enable controls enabled (8 select entities for 4 periods)")
+        _LOGGER.info("MOD TOU priority/enable controls enabled (%d select entities for %d periods)",
+                     len(MOD_TOU_PERIODS) * 2, len(MOD_TOU_PERIODS))
+
+    # MOD GEN4 Allow Grid Charge gate (register 3049) — prerequisite for TOU persistence
+    if 3049 in holding_registers:
+        entities.append(GrowattModAllowGridChargeSelect(coordinator, config_entry))
+        _LOGGER.info("MOD Allow Grid Charge control enabled (register 3049)")
 
     if entities:
         entry_name = config_entry.data.get("name", config_entry.title)
@@ -229,7 +239,9 @@ class GrowattGenericSelect(CoordinatorEntity, SelectEntity):
                 _LOGGER.info("Set %s to %s (value=%d, verified)", self._control_name, option, value)
             else:
                 _LOGGER.warning(
-                    "%s: write succeeded but value reverted (possible cloud override)",
+                    "%s: write succeeded but value reverted. Possible causes: "
+                    "ShineWiFi/cloud dongle overriding local writes, inverter firmware "
+                    "rejecting the value, or a prerequisite setting not enabled.",
                     self._control_name,
                 )
             self.coordinator.track_write(register_addr, value, self._control_name)
@@ -609,7 +621,9 @@ class GrowattModTouPriority(CoordinatorEntity, SelectEntity):
         self._config_entry = config_entry
         self._period = period_def["period"]
         self._start_reg = period_def["start_reg"]
+        self._end_reg = period_def["end_reg"]
         self._start_field = period_def["start_field"]
+        self._end_field = period_def["end_field"]
 
         entry_name = config_entry.data.get("name", config_entry.title)
         self._attr_name = f"{entry_name} TOU Period {self._period} Priority"
@@ -631,26 +645,27 @@ class GrowattModTouPriority(CoordinatorEntity, SelectEntity):
         return self._PRIORITY_MAP.get(priority)
 
     async def async_select_option(self, option: str) -> None:
-        """Write new priority, preserving time and enable bits."""
+        """Write new priority atomically — always write start+end together as a single FC16 transaction."""
         priority = self._PRIORITY_REVERSE.get(option)
         if priority is None:
             return
         data = self.coordinator.data
         current_raw = getattr(data, self._start_field, 0) if data else 0
         new_raw = (int(current_raw) & 0x9FFF) | (priority << 13)
+        current_end = int(getattr(data, self._end_field, 0) if data else 0)
         try:
-            write_ok, verified = await self.hass.async_add_executor_job(
-                self.coordinator.modbus_client.write_register_verified, self._start_reg, new_raw,
+            success = await self.hass.async_add_executor_job(
+                self.coordinator.modbus_client.write_registers,
+                self._start_reg,
+                [new_raw, current_end],
             )
         except ModbusWriteError:
-            _LOGGER.error("Failed to write MOD TOU period %d priority (register %d)", self._period, self._start_reg)
+            _LOGGER.error("Failed to write MOD TOU period %d priority (register %d, atomic FC16)", self._period, self._start_reg)
             return
-        if write_ok:
-            if verified:
-                _LOGGER.info("Set MOD TOU period %d priority to %s (raw=0x%04X, verified)", self._period, option, new_raw)
-            else:
-                _LOGGER.warning("MOD TOU period %d priority: write succeeded but value reverted (possible cloud override)", self._period)
+        if success:
+            _LOGGER.info("Set MOD TOU period %d priority to %s (start=0x%04X, end=0x%04X, atomic FC16)", self._period, option, new_raw, current_end)
             self.coordinator.track_write(self._start_reg, new_raw, self._start_field)
+            self.coordinator.track_write(self._end_reg, current_end, self._end_field)
             await self.coordinator.async_request_refresh()
 
 
@@ -671,7 +686,9 @@ class GrowattModTouEnable(CoordinatorEntity, SelectEntity):
         self._config_entry = config_entry
         self._period = period_def["period"]
         self._start_reg = period_def["start_reg"]
+        self._end_reg = period_def["end_reg"]
         self._start_field = period_def["start_field"]
+        self._end_field = period_def["end_field"]
 
         entry_name = config_entry.data.get("name", config_entry.title)
         self._attr_name = f"{entry_name} TOU Period {self._period} Enable"
@@ -693,22 +710,82 @@ class GrowattModTouEnable(CoordinatorEntity, SelectEntity):
         return "Enabled" if enabled else "Disabled"
 
     async def async_select_option(self, option: str) -> None:
-        """Write new enable state, preserving time and priority bits."""
+        """Write new enable state atomically — always write start+end together as a single FC16 transaction."""
         enable = 1 if option == "Enabled" else 0
         data = self.coordinator.data
         current_raw = getattr(data, self._start_field, 0) if data else 0
         new_raw = (int(current_raw) & 0x7FFF) | (enable << 15)
+        current_end = int(getattr(data, self._end_field, 0) if data else 0)
         try:
-            write_ok, verified = await self.hass.async_add_executor_job(
-                self.coordinator.modbus_client.write_register_verified, self._start_reg, new_raw,
+            success = await self.hass.async_add_executor_job(
+                self.coordinator.modbus_client.write_registers,
+                self._start_reg,
+                [new_raw, current_end],
             )
         except ModbusWriteError:
-            _LOGGER.error("Failed to write MOD TOU period %d enable (register %d)", self._period, self._start_reg)
+            _LOGGER.error("Failed to write MOD TOU period %d enable (register %d, atomic FC16)", self._period, self._start_reg)
+            return
+        if success:
+            _LOGGER.info("Set MOD TOU period %d enable to %s (start=0x%04X, end=0x%04X, atomic FC16)", self._period, option, new_raw, current_end)
+            self.coordinator.track_write(self._start_reg, new_raw, self._start_field)
+            self.coordinator.track_write(self._end_reg, current_end, self._end_field)
+            await self.coordinator.async_request_refresh()
+
+
+class GrowattModAllowGridChargeSelect(CoordinatorEntity, SelectEntity):
+    """Select entity for the MOD GEN4 'Allow Grid Charge' gate (register 3049).
+
+    This register must be set to Enabled (1) before TOU time slot registers
+    (3038-3059) will persist on GEN4 hardware.  Plain 0/1 register — no bit masking.
+    """
+
+    _REGISTER = 3049
+    _DATA_FIELD = "allow_grid_charge"
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_icon = "mdi:transmission-tower-export"
+    _attr_options = ["Disabled", "Enabled"]
+
+    def __init__(self, coordinator, config_entry) -> None:
+        """Initialize the Allow Grid Charge select."""
+        super().__init__(coordinator)
+        self._config_entry = config_entry
+        entry_name = config_entry.data.get("name", config_entry.title)
+        self._attr_name = f"{entry_name} Allow Grid Charge"
+        self._attr_unique_id = f"{config_entry.entry_id}_allow_grid_charge"
+
+    @property
+    def device_info(self):
+        """Return device information."""
+        return self.coordinator.get_device_info(DEVICE_TYPE_BATTERY)
+
+    @property
+    def current_option(self) -> str | None:
+        """Return current state."""
+        data = self.coordinator.data
+        if data is None:
+            return None
+        raw = getattr(data, self._DATA_FIELD, 0)
+        return "Enabled" if int(raw) else "Disabled"
+
+    async def async_select_option(self, option: str) -> None:
+        """Write new state to register 3049."""
+        value = 1 if option == "Enabled" else 0
+        try:
+            write_ok, verified = await self.hass.async_add_executor_job(
+                self.coordinator.modbus_client.write_register_verified, self._REGISTER, value,
+            )
+        except ModbusWriteError:
+            _LOGGER.error("Failed to write allow_grid_charge (register %d)", self._REGISTER)
             return
         if write_ok:
             if verified:
-                _LOGGER.info("Set MOD TOU period %d enable to %s (raw=0x%04X, verified)", self._period, option, new_raw)
+                _LOGGER.info("Set allow_grid_charge to %s (value=%d, verified)", option, value)
             else:
-                _LOGGER.warning("MOD TOU period %d enable: write succeeded but value reverted (possible cloud override)", self._period)
-            self.coordinator.track_write(self._start_reg, new_raw, self._start_field)
+                _LOGGER.warning(
+                    "allow_grid_charge: write succeeded but value reverted. "
+                    "Possible causes: ShineWiFi/cloud dongle overriding local writes, "
+                    "or inverter firmware rejecting the value."
+                )
+            self.coordinator.track_write(self._REGISTER, value, self._DATA_FIELD)
             await self.coordinator.async_request_refresh()

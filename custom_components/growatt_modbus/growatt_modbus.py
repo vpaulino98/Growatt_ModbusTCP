@@ -244,6 +244,7 @@ class GrowattData:
 
     # SPH/SPM Battery Control registers (1000+ range)
     priority_mode: int = 0            # 0=Load First, 1=Battery First, 2=Grid First
+    load_first_battery_minimum_soc: int = 10  # 10-100 (min SOC % in Load First mode, register 608)
     discharge_power_rate: int = 0     # 0-100 (battery discharge power %)
     discharge_stopped_soc: int = 0    # 0-100 (stop discharge at SOC %)
     charge_power_rate: int = 0        # 0-100 (battery charge power %)
@@ -271,6 +272,19 @@ class GrowattData:
     mod_tou_3_end:   int = 0
     mod_tou_4_start: int = 0
     mod_tou_4_end:   int = 0
+    # MOD GEN4 TOU slots 5-9 (registers 3050-3059; gap at 3046-3049 is EMS/grid-charge controls)
+    mod_tou_5_start: int = 0
+    mod_tou_5_end:   int = 0
+    mod_tou_6_start: int = 0
+    mod_tou_6_end:   int = 0
+    mod_tou_7_start: int = 0
+    mod_tou_7_end:   int = 0
+    mod_tou_8_start: int = 0
+    mod_tou_8_end:   int = 0
+    mod_tou_9_start: int = 0
+    mod_tou_9_end:   int = 0
+    # MOD GEN4 prerequisite gate for TOU persistence (register 3049)
+    allow_grid_charge: int = 0
 
     time_period_1_enable: int = 0     # 0=Disabled, 1=Enabled
     time_period_1_start: int = 0      # hex-packed (hours*256+minutes, e.g. 06:00 = 0x0600 = 1536)
@@ -281,6 +295,36 @@ class GrowattData:
     time_period_3_enable: int = 0     # 0=Disabled, 1=Enabled
     time_period_3_start: int = 0      # hex-packed
     time_period_3_end: int = 0        # hex-packed
+    # SPH GEN3 Battery First extended slots 4-6 (registers 1017-1025)
+    batt_first_time_period_4_start: int = 0
+    batt_first_time_period_4_end:   int = 0
+    batt_first_time_period_4_enable: int = 0
+    batt_first_time_period_5_start: int = 0
+    batt_first_time_period_5_end:   int = 0
+    batt_first_time_period_5_enable: int = 0
+    batt_first_time_period_6_start: int = 0
+    batt_first_time_period_6_end:   int = 0
+    batt_first_time_period_6_enable: int = 0
+    # SPH GEN3 Grid First extended slots 4-6 (registers 1026-1034)
+    grid_first_time_period_4_start: int = 0
+    grid_first_time_period_4_end:   int = 0
+    grid_first_time_period_4_enable: int = 0
+    grid_first_time_period_5_start: int = 0
+    grid_first_time_period_5_end:   int = 0
+    grid_first_time_period_5_enable: int = 0
+    grid_first_time_period_6_start: int = 0
+    grid_first_time_period_6_end:   int = 0
+    grid_first_time_period_6_enable: int = 0
+    # SPH GEN3 Grid First extended slots 7-9 (registers 1080-1088)
+    grid_first_time_period_7_start: int = 0
+    grid_first_time_period_7_end:   int = 0
+    grid_first_time_period_7_enable: int = 0
+    grid_first_time_period_8_start: int = 0
+    grid_first_time_period_8_end:   int = 0
+    grid_first_time_period_8_enable: int = 0
+    grid_first_time_period_9_start: int = 0
+    grid_first_time_period_9_end:   int = 0
+    grid_first_time_period_9_enable: int = 0
 
     # SPF Off-Grid Control registers
     output_config: int = 0            # 0=SBU, 1=SOL, 2=UTI, 3=SUB
@@ -640,7 +684,7 @@ class GrowattModbus:
         if abs(battery_power) < MIN_POWER_THRESHOLD:
             return battery_power
 
-        status = int(data.inverter_status)
+        status = int(data.status)
 
         # Charging states: battery is receiving power — sign must be positive
         CHARGING_STATES = {5, 6, 7, 8, 9, 10}
@@ -1232,38 +1276,57 @@ class GrowattModbus:
 
             # Power Flow (if available - storage/hybrid models)
             power_to_user_addr = self._find_register_by_name('power_to_user_low')
-            power_to_grid_addr = self._find_register_by_name('power_to_grid_low')
             power_to_load_addr = self._find_register_by_name('power_to_load_low')
-            
-            if power_to_user_addr:
-                data.power_to_user = self._get_register_value(power_to_user_addr) or 0.0
+
+            # power_to_grid: prefer native 3044, fall back to VPP active_power (31101 maps_to power_to_grid_low)
+            # On some MID/MOD V2.01 firmware the 3000-range registers return 0 while VPP registers are correct.
+            power_to_grid_addr = self._find_register_by_name('power_to_grid_low')
             if power_to_grid_addr:
-                data.power_to_grid = self._get_register_value(power_to_grid_addr) or 0.0
+                ptg_val = self._get_register_value(power_to_grid_addr)
+                if ptg_val is None or ptg_val == 0.0:
+                    # Try VPP fallback (31101 maps_to='power_to_grid_low' in MID/MOD V2.01 profile)
+                    vpp_addr = self._find_register_by_name_with_fallback('power_to_grid_low')
+                    if vpp_addr and vpp_addr != power_to_grid_addr:
+                        vpp_val = self._get_register_value(vpp_addr)
+                        if vpp_val is not None and vpp_val != 0.0:
+                            ptg_val = vpp_val
+                            logger.debug(f"power_to_grid 3044=0, using VPP active power reg {vpp_addr}: {ptg_val}W")
+                data.power_to_grid = ptg_val if ptg_val is not None else 0.0
+
+            # power_to_user: prefer native 3042, fall back to VPP meter_power (31113 maps_to power_to_user_low)
+            # On some MID/MOD V2.01 firmware the 3000-range registers return 0 while VPP registers are correct.
+            if power_to_user_addr:
+                ptu_val = self._get_register_value(power_to_user_addr)
+                if ptu_val is None or ptu_val == 0.0:
+                    # Try VPP fallback (31113 maps_to='power_to_user_low' in MID/MOD V2.01 profile)
+                    vpp_addr = self._find_register_by_name_with_fallback('power_to_user_low')
+                    if vpp_addr and vpp_addr != power_to_user_addr:
+                        vpp_val = self._get_register_value(vpp_addr)
+                        if vpp_val is not None and vpp_val != 0.0:
+                            ptu_val = vpp_val
+                            logger.debug(f"power_to_user 3042=0, using VPP meter reg {vpp_addr}: {ptu_val}W")
+                data.power_to_user = ptu_val if ptu_val is not None else 0.0
             if power_to_load_addr:
                 data.power_to_load = self._get_register_value(power_to_load_addr) or 0.0
             
             # Energy Today
             # For WIT/MIC/SPH-TL3 with per-MPPT tracking: use sum of PV string energy for accurate solar production
             # Registers 53-54 show total system AC output (PV+battery), not PV-only (Issue #146)
-            # IMPORTANT: Only use per-MPPT calculation if PV strings are actually connected (avoid garbage data)
-            pv1_connected = data.pv1_voltage > 0 or data.pv1_power > 0
-            pv2_connected = data.pv2_voltage > 0 or data.pv2_power > 0
-            pv3_connected = data.pv3_voltage > 0 or data.pv3_power > 0
+            # Use per-MPPT values whenever any register has a non-zero accumulated value.
+            # Do NOT gate on pv*_connected (voltage/power > 0): at sunset those drop to 0 but the
+            # per-MPPT energy registers still hold today's accumulated total. Gating on connected
+            # caused a data-source switch at end of day, producing a spurious drop (Issue #225).
+            # Each string contributes only if its own energy_today > 0, so a 2-string model with
+            # pv3_energy_today = 0 all day is handled correctly without the connected check.
+            has_mppt_energy = (data.pv1_energy_today > 0 or data.pv2_energy_today > 0 or data.pv3_energy_today > 0)
 
-            if (pv1_connected or pv2_connected or pv3_connected) and (data.pv1_energy_today > 0 or data.pv2_energy_today > 0 or data.pv3_energy_today > 0):
-                # Calculate energy only from connected strings to avoid garbage data
-                pv_energy_sum = 0.0
-                if pv1_connected and data.pv1_energy_today > 0:
-                    pv_energy_sum += data.pv1_energy_today
-                if pv2_connected and data.pv2_energy_today > 0:
-                    pv_energy_sum += data.pv2_energy_today
-                if pv3_connected and data.pv3_energy_today > 0:
-                    pv_energy_sum += data.pv3_energy_today
+            if has_mppt_energy:
+                pv_energy_sum = data.pv1_energy_today + data.pv2_energy_today + data.pv3_energy_today
 
                 # Sanity check: per-MPPT energy should be reasonable (< 100 kWh per day for MIC/small inverters)
                 if pv_energy_sum < 100:
                     data.energy_today = pv_energy_sum
-                    logger.debug(f"[{self.register_map['name']}@{self.connection_id}] Energy today from connected MPPTs: PV1={data.pv1_energy_today if pv1_connected else 'N/A'} + PV2={data.pv2_energy_today if pv2_connected else 'N/A'} + PV3={data.pv3_energy_today if pv3_connected else 'N/A'} = {data.energy_today} kWh")
+                    logger.debug(f"[{self.register_map['name']}@{self.connection_id}] Energy today from per-MPPT registers: PV1={data.pv1_energy_today} + PV2={data.pv2_energy_today} + PV3={data.pv3_energy_today} = {data.energy_today} kWh")
                 else:
                     # Garbage data detected - fall back to register reading
                     logger.warning(f"[{self.register_map['name']}@{self.connection_id}] Per-MPPT energy {pv_energy_sum} kWh unrealistic - using fallback register instead")
@@ -1272,7 +1335,7 @@ class GrowattModbus:
                         data.energy_today = self._get_register_value(energy_today_addr) or 0.0
                         logger.debug(f"[{self.register_map['name']}@{self.connection_id}] Energy today from reg {energy_today_addr}: {data.energy_today} kWh")
             else:
-                # Fallback to total system output for other inverters
+                # No per-MPPT data (profile doesn't define those registers, or midnight register reset)
                 energy_today_addr = self._find_register_by_name('energy_today_low')
                 if energy_today_addr:
                     data.energy_today = self._get_register_value(energy_today_addr) or 0.0
@@ -1482,13 +1545,14 @@ class GrowattModbus:
         """Write a holding register with read-back verification and retry.
 
         After each write, reads the register back to confirm the value stuck.
-        If the read-back differs (e.g. cloud override via ShineWiFi dongle),
-        retries up to WRITE_VERIFY_MAX_RETRIES times.
+        If the read-back differs, retries up to WRITE_VERIFY_MAX_RETRIES times.
+        Reversion can be caused by a ShineWiFi/cloud override, inverter firmware
+        rejecting the value, or another controller on the bus.
 
         Returns:
             tuple of (write_success: bool, value_verified: bool):
             - (True, True)   — write succeeded and read-back confirmed
-            - (True, False)  — write succeeded but read-back differs (cloud override)
+            - (True, False)  — write succeeded but read-back differs (value reverted)
             - (False, False) — write itself failed (Modbus error)
         """
         for attempt in range(WRITE_VERIFY_MAX_RETRIES):
@@ -1528,7 +1592,8 @@ class GrowattModbus:
             # Mismatch — value didn't stick
             logger.warning(
                 "[WRITE VERIFY] Register %d: wrote %d but read back %d (attempt %d/%d). "
-                "Possible cloud override via ShineWiFi dongle.",
+                "Value reverted — possible causes: ShineWiFi/cloud override, inverter firmware "
+                "rejecting the value, or a prerequisite register not set.",
                 register, value, read_back[0], attempt + 1, WRITE_VERIFY_MAX_RETRIES,
             )
 
@@ -1537,9 +1602,12 @@ class GrowattModbus:
 
         # All retries exhausted — value keeps reverting
         logger.error(
-            "[WRITE VERIFY] Register %d: value %d was overridden %d times. "
-            "The Growatt cloud (ShineWiFi dongle) is likely overwriting local Modbus writes. "
-            "To fix: disconnect the ShineWiFi dongle or disable cloud control in the Growatt app.",
+            "[WRITE VERIFY] Register %d: value %d reverted %d time(s) after writing. "
+            "Possible causes: (1) ShineWiFi/cloud dongle overriding local writes — "
+            "disconnect it or disable remote control in the Growatt app; "
+            "(2) inverter firmware rejecting the value — check prerequisite settings "
+            "(e.g. Allow Grid Charge for MOD TOU); "
+            "(3) the register is read-only or unsupported on this firmware.",
             register, value, WRITE_VERIFY_MAX_RETRIES,
         )
         return (True, False)
@@ -1930,25 +1998,78 @@ class GrowattModbus:
     def _read_battery_data(self, data: GrowattData) -> None:
         """Read battery data (storage/hybrid models)"""
         try:
-            # Battery voltage (use smart fallback if multiple ranges available)
-            value = self._get_register_value_with_fallback('battery_voltage')
-            if value is not None:
-                data.battery_voltage = value
+            # Battery voltage
+            # Issue #247: on some WIT firmware variants, VPP register 31214 (maps_to='battery_voltage')
+            # reports a spuriously low value (e.g. 5.2 V) while the native 8034 register is correct
+            # (53.7 V). Apply the same multi-candidate / largest-plausible-value strategy used for
+            # battery_current: read all available voltage registers, discard implausibly low values,
+            # and pick the highest (most likely correct) reading.
+            _VOLTAGE_LOOKUP_NAMES = (
+                'battery_voltage',       # native 8000-range or VPP maps_to (e.g. WIT 8034 / 31214)
+                'battery_voltage_bms',   # BMS voltage (WIT-only, typically more accurate)
+                'battery_voltage_legacy',
+            )
+            _VOLTAGE_MIN_V = 10.0   # below this is implausible for any connected battery pack
+            _VOLTAGE_MAX_V = 800.0  # sanity ceiling
+
+            seen_voltage_addrs: set = set()
+            voltage_candidates: list = []
+            for _vname in _VOLTAGE_LOOKUP_NAMES:
+                # Use _find_all_registers_by_name to get EVERY address for this name
+                # (including maps_to matches across all ranges). Previously only one
+                # address was returned (the preferred-range winner), so when the VPP range
+                # was preferred the native 8000-range register was never evaluated as a
+                # candidate — meaning the spurious VPP value was never compared against
+                # the correct native value. (Issue #247 root cause)
+                for _a in self._find_all_registers_by_name(_vname):
+                    if _a not in seen_voltage_addrs:
+                        seen_voltage_addrs.add(_a)
+                        _v = self._get_register_value(_a)
+                        if _v is not None and _VOLTAGE_MIN_V <= _v <= _VOLTAGE_MAX_V:
+                            voltage_candidates.append((_a, _v))
+                            logger.debug(f"Battery voltage candidate reg {_a} ({_vname}): {_v}V")
+
+            if voltage_candidates:
+                _best_addr, _best_val = max(voltage_candidates, key=lambda c: c[1])
+                data.battery_voltage = _best_val
+                logger.debug(f"Battery voltage: {_best_val}V (selected from {len(voltage_candidates)} candidate(s), reg {_best_addr})")
             else:
-                data.battery_voltage = 0.0
+                # All candidates out of range or absent — fall back to smart-fallback lookup
+                value = self._get_register_value_with_fallback('battery_voltage')
+                data.battery_voltage = value if value is not None else 0.0
 
             # Battery current (signed: positive=discharge, negative=charge)
-            # Use range-aware lookup to respect VPP vs fallback detection
-            addr = self._find_register_by_name_with_fallback('battery_current_low')
-            if not addr:
-                # Fallback to single-register name (used by legacy/WIT maps)
-                addr = self._find_register_by_name_with_fallback('battery_current')
-            if not addr:
-                # Fallback to legacy register (3170)
-                addr = self._find_register_by_name('battery_current_legacy')
-            if addr:
-                data.battery_current = self._get_register_value(addr) or 0.0
-                logger.debug(f"Battery current from reg {addr}: {data.battery_current}A")
+            # Issue #226: some WIT firmware returns a small wrong non-zero on VPP reg 31215
+            # while the native reg 8035 carries the correct value.  Rather than a zero-only
+            # fallback, read all available registers and pick the one with the largest
+            # absolute value (bounded to a plausible ±300 A range).
+            _CURRENT_LOOKUP_NAMES = (
+                'battery_current_low',   # 32-bit paired VPP (e.g. WIT 31215 via maps_to)
+                'battery_current',       # native 8000-range (e.g. WIT 8035)
+                'battery_current_legacy',
+                'battery_current_3k',    # 3k-range fallback (e.g. WIT 3170)
+            )
+            _CURRENT_MAX_A = 300.0  # sanity ceiling — discard clearly out-of-range readings
+
+            seen_current_addrs: set = set()
+            current_candidates: list = []
+            for _cname in _CURRENT_LOOKUP_NAMES:
+                # Same fix as voltage: iterate ALL addresses per name so the native
+                # 8000-range register is always evaluated alongside the VPP register.
+                for _a in self._find_all_registers_by_name(_cname):
+                    if _a not in seen_current_addrs:
+                        seen_current_addrs.add(_a)
+                        _v = self._get_register_value(_a)
+                        if _v is not None and abs(_v) <= _CURRENT_MAX_A:
+                            current_candidates.append((_a, _v))
+                            logger.debug(f"Battery current candidate reg {_a} ({_cname}): {_v}A")
+
+            if current_candidates:
+                _best_addr, _best_val = max(current_candidates, key=lambda c: abs(c[1]))
+                data.battery_current = _best_val
+                logger.debug(f"Battery current: {_best_val}A (selected from {len(current_candidates)} candidate(s), reg {_best_addr})")
+            else:
+                data.battery_current = 0.0
 
             # Battery SOC (use smart fallback if multiple ranges available)
             value = self._get_register_value_with_fallback('battery_soc')
@@ -2366,6 +2487,17 @@ class GrowattModbus:
             except Exception as e:
                 logger.debug(f"Could not read priority_mode register {priority_addr}: {e}")
 
+        # Load First Battery Minimum SOC (register 608 — undocumented, SPH hybrid only)
+        if 608 in holding_map:
+            try:
+                load_first_regs = self.read_holding_registers(608, 1)
+                if load_first_regs is not None and len(load_first_regs) >= 1:
+                    data.load_first_battery_minimum_soc = int(load_first_regs[0])
+                    logger.debug("[SPH CTRL] load_first_battery_minimum_soc=%s%%",
+                                 data.load_first_battery_minimum_soc)
+            except Exception as e:
+                logger.debug(f"Could not read load_first_battery_minimum_soc register 608: {e}")
+
         # Discharge Control (1070-1071)
         if any(reg in holding_map for reg in [1070, 1071]):
             try:
@@ -2426,6 +2558,60 @@ class GrowattModbus:
             except Exception as e:
                 logger.debug(f"Could not read time period control registers: {e}")
 
+        # SPH GEN3 Battery First extended slots 4-6 (registers 1017-1025)
+        if any(reg in holding_map for reg in range(1017, 1026)):
+            try:
+                bf_regs = self.read_holding_registers(1017, 9)
+                if bf_regs is not None and len(bf_regs) >= 9:
+                    if 1017 in holding_map: data.batt_first_time_period_4_start  = int(bf_regs[0])
+                    if 1018 in holding_map: data.batt_first_time_period_4_end    = int(bf_regs[1])
+                    if 1019 in holding_map: data.batt_first_time_period_4_enable = int(bf_regs[2])
+                    if 1020 in holding_map: data.batt_first_time_period_5_start  = int(bf_regs[3])
+                    if 1021 in holding_map: data.batt_first_time_period_5_end    = int(bf_regs[4])
+                    if 1022 in holding_map: data.batt_first_time_period_5_enable = int(bf_regs[5])
+                    if 1023 in holding_map: data.batt_first_time_period_6_start  = int(bf_regs[6])
+                    if 1024 in holding_map: data.batt_first_time_period_6_end    = int(bf_regs[7])
+                    if 1025 in holding_map: data.batt_first_time_period_6_enable = int(bf_regs[8])
+                    logger.debug("[SPH CTRL] Battery First periods 4-6 loaded")
+            except Exception as e:
+                logger.debug(f"Could not read Battery First extended time period registers 1017-1025: {e}")
+
+        # SPH GEN3 Grid First extended slots 4-6 (registers 1026-1034)
+        if any(reg in holding_map for reg in range(1026, 1035)):
+            try:
+                gf46_regs = self.read_holding_registers(1026, 9)
+                if gf46_regs is not None and len(gf46_regs) >= 9:
+                    if 1026 in holding_map: data.grid_first_time_period_4_start  = int(gf46_regs[0])
+                    if 1027 in holding_map: data.grid_first_time_period_4_end    = int(gf46_regs[1])
+                    if 1028 in holding_map: data.grid_first_time_period_4_enable = int(gf46_regs[2])
+                    if 1029 in holding_map: data.grid_first_time_period_5_start  = int(gf46_regs[3])
+                    if 1030 in holding_map: data.grid_first_time_period_5_end    = int(gf46_regs[4])
+                    if 1031 in holding_map: data.grid_first_time_period_5_enable = int(gf46_regs[5])
+                    if 1032 in holding_map: data.grid_first_time_period_6_start  = int(gf46_regs[6])
+                    if 1033 in holding_map: data.grid_first_time_period_6_end    = int(gf46_regs[7])
+                    if 1034 in holding_map: data.grid_first_time_period_6_enable = int(gf46_regs[8])
+                    logger.debug("[SPH CTRL] Grid First periods 4-6 loaded")
+            except Exception as e:
+                logger.debug(f"Could not read Grid First extended time period registers 1026-1034: {e}")
+
+        # SPH GEN3 Grid First extended slots 7-9 (registers 1080-1088)
+        if any(reg in holding_map for reg in range(1080, 1089)):
+            try:
+                gf79_regs = self.read_holding_registers(1080, 9)
+                if gf79_regs is not None and len(gf79_regs) >= 9:
+                    if 1080 in holding_map: data.grid_first_time_period_7_start  = int(gf79_regs[0])
+                    if 1081 in holding_map: data.grid_first_time_period_7_end    = int(gf79_regs[1])
+                    if 1082 in holding_map: data.grid_first_time_period_7_enable = int(gf79_regs[2])
+                    if 1083 in holding_map: data.grid_first_time_period_8_start  = int(gf79_regs[3])
+                    if 1084 in holding_map: data.grid_first_time_period_8_end    = int(gf79_regs[4])
+                    if 1085 in holding_map: data.grid_first_time_period_8_enable = int(gf79_regs[5])
+                    if 1086 in holding_map: data.grid_first_time_period_9_start  = int(gf79_regs[6])
+                    if 1087 in holding_map: data.grid_first_time_period_9_end    = int(gf79_regs[7])
+                    if 1088 in holding_map: data.grid_first_time_period_9_enable = int(gf79_regs[8])
+                    logger.debug("[SPH CTRL] Grid First periods 7-9 loaded")
+            except Exception as e:
+                logger.debug(f"Could not read Grid First extended time period registers 1080-1088: {e}")
+
         # MOD TL3-XH TOU schedule (FC04 holding registers 3038-3045)
         if 3038 in holding_map:
             try:
@@ -2444,6 +2630,39 @@ class GrowattModbus:
                                  data.mod_tou_1_end, data.mod_tou_2_end, data.mod_tou_3_end, data.mod_tou_4_end)
             except Exception as e:
                 logger.debug(f"Could not read MOD TOU registers 3038-3045: {e}")
+
+        # MOD GEN4 Allow Grid Charge gate (register 3049)
+        if 3049 in holding_map:
+            try:
+                agc_regs = self.read_holding_registers(3049, 1)
+                if agc_regs is not None and len(agc_regs) >= 1:
+                    data.allow_grid_charge = int(agc_regs[0])
+                    logger.debug("[MOD TOU] allow_grid_charge=%s", data.allow_grid_charge)
+            except Exception as e:
+                logger.debug(f"Could not read allow_grid_charge register 3049: {e}")
+
+        # MOD TL3-XH TOU slots 5-9 (registers 3050-3059)
+        if 3050 in holding_map:
+            try:
+                tou59_regs = self.read_holding_registers(3050, 10)
+                if tou59_regs is not None and len(tou59_regs) >= 10:
+                    data.mod_tou_5_start = int(tou59_regs[0])
+                    data.mod_tou_5_end   = int(tou59_regs[1])
+                    data.mod_tou_6_start = int(tou59_regs[2])
+                    data.mod_tou_6_end   = int(tou59_regs[3])
+                    data.mod_tou_7_start = int(tou59_regs[4])
+                    data.mod_tou_7_end   = int(tou59_regs[5])
+                    data.mod_tou_8_start = int(tou59_regs[6])
+                    data.mod_tou_8_end   = int(tou59_regs[7])
+                    data.mod_tou_9_start = int(tou59_regs[8])
+                    data.mod_tou_9_end   = int(tou59_regs[9])
+                    logger.debug("[MOD TOU] periods 5-9 start: %s %s %s %s %s, end: %s %s %s %s %s",
+                                 data.mod_tou_5_start, data.mod_tou_6_start, data.mod_tou_7_start,
+                                 data.mod_tou_8_start, data.mod_tou_9_start,
+                                 data.mod_tou_5_end, data.mod_tou_6_end, data.mod_tou_7_end,
+                                 data.mod_tou_8_end, data.mod_tou_9_end)
+            except Exception as e:
+                logger.debug(f"Could not read MOD TOU registers 3050-3059: {e}")
 
         # --- WIT VPP Remote Control registers (30000+ range) ---
         # Control Authority (30100)

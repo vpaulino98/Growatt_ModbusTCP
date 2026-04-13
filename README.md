@@ -1,7 +1,7 @@
 # Growatt Modbus Integration for Home Assistant ☀️
 
 ![HACS Badge](https://img.shields.io/badge/HACS-Custom-orange.svg)
-![Version](https://img.shields.io/badge/Version-0.6.7-blue.svg)
+![Version](https://img.shields.io/badge/Version-0.7.2-blue.svg)
 [![GitHub Issues](https://img.shields.io/github/issues/0xAHA/Growatt_ModbusTCP.svg)](https://github.com/0xAHA/Growatt_ModbusTCP/issues)
 [![GitHub Stars](https://img.shields.io/github/stars/0xAHA/Growatt_ModbusTCP.svg?style=social)](https://github.com/0xAHA/Growatt_ModbusTCP)
 
@@ -96,6 +96,7 @@ Understanding which sensor measures what is the most common source of confusion.
 | **SPH** 3–6kW         | Hybrid    | Single | Yes     | VPP + Legacy | ✅     |
 | **SPH** 7–10kW        | Hybrid    | Single | Yes     | VPP + Legacy | ✅     |
 | **SPH/SPM** 8–10kW HU | Hybrid    | Single | Yes     | VPP + Legacy | ⚠️   |
+| **SPA** 3–6kW TL BL   | AC Storage | Single | Yes    | Auto         | ✅     |
 | **SPH-TL3** 3–10kW    | Hybrid    | Three  | Yes     | VPP + Legacy | ✅     |
 | **WIT** 4–15kW TL3    | Hybrid    | Three  | Yes     | VPP v2.02    | ✅     |
 
@@ -103,7 +104,7 @@ Understanding which sensor measures what is the most common source of confusion.
 
 📖 **[Full model specifications, protocol details, and sensor availability →](docs/MODELS.md)**
 
-📖 **[Inverter control guide (SPH / SPF / WIT / MOD) →](docs/CONTROL.md)**
+📖 **[Inverter control guide (SPH / SPF / WIT / MOD) →](docs/CONTROLS.md)**
 
 ---
 
@@ -295,16 +296,32 @@ The integration pre-configures sensors with the correct `state_class` and `devic
 
 See **[RELEASENOTES.md](RELEASENOTES.md)** for the full changelog.
 
-**v0.6.6 highlights:**
+**v0.7.2 highlights:**
 
-- Night-time offline sensors no longer show 0 or corrupt energy totals
-- WIT battery current fixed (was always showing 0)
-- MIN TL-XH startup Modbus warnings eliminated
-- Control entities (control_authority, VPP export limit) now gated on live hardware probe — won't appear if hardware doesn't support them
-- Energy totals persisted across HA restarts
-- WIT control_authority side-effect on export limit mode fixed
-- SPF battery power sign correction during PV charging
-- SPE 8–12kW ES profile added
+- **SPH 10000TL3 BH-UP — wrongly assigned V201 profile fixed (#251):** Devices with DTC 3601 that return protocol version 0 (legacy register layout) were occasionally auto-detected as the V2.01 profile, causing `grid_voltage` and `grid_frequency` to read as zero. Affected users should remove and re-add the integration to trigger fresh detection.
+
+**v0.7.1 highlights:**
+
+- **SPA series — new profile (#249):** SPA 3000–6000TL BL (AC-coupled battery storage, no PV inputs) now auto-detects correctly and gets its own dedicated profile. All battery, energy breakdown, load power, and AC voltage sensors work. Previously auto-detected as MIN 7000-10000TL-X with all sensors at zero.
+- **MIC misclassification of legacy string inverters fixed (#242):** Inverters with high PV voltage (> 80 V) and no 3000+ register range no longer incorrectly detect as MIC micro inverters.
+
+**v0.7.0 highlights:**
+
+- **SPH TL3 — Energy Today drop at sunset fixed (#225):** Per-MPPT energy registers are now used as long as any string has accumulated energy today, regardless of whether PV strings are currently producing. Previously the data source switched to register 54 (AC output total) at sunset, causing a visible ~2 kWh drop.
+- **WIT 8K-HU — Battery voltage wrong value fixed (#247):** VPP register 31214 (`maps_to battery_voltage`) reports spuriously low values on some firmware variants. The integration now reads all available voltage registers and selects the highest plausible value, consistent with the existing battery current selection strategy.
+- **SPF — Battery Power always zero fixed (#174):** `_validate_spf_battery_power_sign` referenced a non-existent attribute (`data.inverter_status` instead of `data.status`), silently suppressing battery power on every poll.
+- **MID — Grid, load energy and battery sensors added (#240):** Power flow, daily/total energy counters, and full VPP battery set (voltage, SOC, current, temp, SOH, power) were all missing from the profile.
+- **SPH / TL-XH — Accurate lifetime PV generation (#243):** Registers 91/92 (`Epv_total H/L`) added — raw DC-side cumulative generation, matching ShinePhone "Total Power Generation".
+- **SPE auto-detection fixed (#212):** DTC 64541 now maps correctly to the SPE 8000-12000 ES profile instead of falling back to SPH 7-10kW.
+
+**v0.6.8 highlights:**
+
+- **MOD GEN4 TOU — full fix:** Register 3049 ("Allow Grid Charge") prerequisite gate exposed; all TOU writes (time, priority, enable) now use atomic FC16 transactions; 9 slots supported; time entities appear correctly in automations.
+- **SPH GEN3 — extended schedules:** Battery First slots 4–6 and Grid First slots 4–9 exposed as time pickers and enable selects. AC Charge periods renamed to avoid confusion with the new slots.
+- **SPH Hybrid — Load First Battery Minimum SOC** — new slider entity (register 608, 10–100 %).
+- **WIT battery current fix** — largest absolute value selected across all available registers, eliminating false small-but-wrong readings from VPP register 31215.
+- **MOD grid power fallback** — falls back to VPP meter registers when 3000-range grid power reads zero.
+- **New control guide** — [`docs/CONTROLS.md`](docs/CONTROLS.md) with per-model instructions for MOD, SPH, WIT, and SPF.
 
 ---
 
