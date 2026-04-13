@@ -399,6 +399,33 @@ MIN_TL_XH_3000_10000_V201 = {
         3: {'name': 'active_power_rate', 'scale': 1, 'unit': '%', 'access': 'RW', 'desc': 'Max output power %'},
         30: {'name': 'modbus_address', 'scale': 1, 'unit': '', 'access': 'RW', 'desc': 'Modbus address 1-254'},
 
+        # Work Mode (Priority) — RTU V1.39, explicitly for TL-X and TL-XH
+        3018: {'name': 'work_mode', 'scale': 1, 'unit': '', 'access': 'RW',
+               'desc': 'Work mode: 0=Load First, 1=PV First, 2=Battery First, 3=Grid First'},
+
+        # TOU Time Periods — RTU V1.39, bit-packed (bit15=enable, bits13-14=priority, bits8-12=hour, bits0-7=min)
+        # priority: 0=Load First, 1=Battery First, 2=Grid First
+        # Same layout as MOD GEN4. RTU doc explicitly lists 3038-3057 for TL-X and TL-XH (8 periods).
+        3038: {'name': 'tou_period1_start', 'scale': 1, 'unit': '', 'access': 'RW', 'desc': 'TOU period 1 start (bit-packed)'},
+        3039: {'name': 'tou_period1_end',   'scale': 1, 'unit': '', 'access': 'RW', 'desc': 'TOU period 1 end (bit-packed)'},
+        3040: {'name': 'tou_period2_start', 'scale': 1, 'unit': '', 'access': 'RW', 'desc': 'TOU period 2 start (bit-packed)'},
+        3041: {'name': 'tou_period2_end',   'scale': 1, 'unit': '', 'access': 'RW', 'desc': 'TOU period 2 end (bit-packed)'},
+        3042: {'name': 'tou_period3_start', 'scale': 1, 'unit': '', 'access': 'RW', 'desc': 'TOU period 3 start (bit-packed)'},
+        3043: {'name': 'tou_period3_end',   'scale': 1, 'unit': '', 'access': 'RW', 'desc': 'TOU period 3 end (bit-packed)'},
+        3044: {'name': 'tou_period4_start', 'scale': 1, 'unit': '', 'access': 'RW', 'desc': 'TOU period 4 start (bit-packed)'},
+        3045: {'name': 'tou_period4_end',   'scale': 1, 'unit': '', 'access': 'RW', 'desc': 'TOU period 4 end (bit-packed)'},
+        # Register 3049: AC charge enable gate — must be set to 1 for TOU periods to persist
+        3049: {'name': 'allow_grid_charge', 'scale': 1, 'unit': '', 'access': 'RW',
+               'desc': 'AC charge enable (prerequisite for TOU persistence): 0=Disabled, 1=Enabled'},
+        3050: {'name': 'tou_period5_start', 'scale': 1, 'unit': '', 'access': 'RW', 'desc': 'TOU period 5 start (bit-packed)'},
+        3051: {'name': 'tou_period5_end',   'scale': 1, 'unit': '', 'access': 'RW', 'desc': 'TOU period 5 end (bit-packed)'},
+        3052: {'name': 'tou_period6_start', 'scale': 1, 'unit': '', 'access': 'RW', 'desc': 'TOU period 6 start (bit-packed)'},
+        3053: {'name': 'tou_period6_end',   'scale': 1, 'unit': '', 'access': 'RW', 'desc': 'TOU period 6 end (bit-packed)'},
+        3054: {'name': 'tou_period7_start', 'scale': 1, 'unit': '', 'access': 'RW', 'desc': 'TOU period 7 start (bit-packed)'},
+        3055: {'name': 'tou_period7_end',   'scale': 1, 'unit': '', 'access': 'RW', 'desc': 'TOU period 7 end (bit-packed)'},
+        3056: {'name': 'tou_period8_start', 'scale': 1, 'unit': '', 'access': 'RW', 'desc': 'TOU period 8 start (bit-packed)'},
+        3057: {'name': 'tou_period8_end',   'scale': 1, 'unit': '', 'access': 'RW', 'desc': 'TOU period 8 end (bit-packed)'},
+
         # VPP V2.01 registers
         30000: {'name': 'dtc_code', 'scale': 1, 'unit': '', 'access': 'RO', 'desc': 'Device Type Code: 5100 for MIN TL-XH', 'default': 5100},
         30099: {'name': 'protocol_version', 'scale': 1, 'unit': '', 'access': 'RO', 'desc': 'VPP Protocol version (may be 0 or 201)', 'default': 0},

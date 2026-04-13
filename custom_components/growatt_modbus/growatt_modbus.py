@@ -283,8 +283,10 @@ class GrowattData:
     mod_tou_8_end:   int = 0
     mod_tou_9_start: int = 0
     mod_tou_9_end:   int = 0
-    # MOD GEN4 prerequisite gate for TOU persistence (register 3049)
+    # MOD GEN4 / MIN TL-XH prerequisite gate for TOU persistence (register 3049)
     allow_grid_charge: int = 0
+    # MIN TL-XH / TL-XH work mode (priority) — holding register 3018
+    work_mode: int = 0
 
     time_period_1_enable: int = 0     # 0=Disabled, 1=Enabled
     time_period_1_start: int = 0      # hex-packed (hours*256+minutes, e.g. 06:00 = 0x0600 = 1536)
@@ -2631,15 +2633,25 @@ class GrowattModbus:
             except Exception as e:
                 logger.debug(f"Could not read MOD TOU registers 3038-3045: {e}")
 
-        # MOD GEN4 Allow Grid Charge gate (register 3049)
+        # MOD GEN4 / MIN TL-XH Allow Grid Charge gate (register 3049)
         if 3049 in holding_map:
             try:
                 agc_regs = self.read_holding_registers(3049, 1)
                 if agc_regs is not None and len(agc_regs) >= 1:
                     data.allow_grid_charge = int(agc_regs[0])
-                    logger.debug("[MOD TOU] allow_grid_charge=%s", data.allow_grid_charge)
+                    logger.debug("[TOU] allow_grid_charge=%s", data.allow_grid_charge)
             except Exception as e:
                 logger.debug(f"Could not read allow_grid_charge register 3049: {e}")
+
+        # MIN TL-XH / TL-XH Work Mode / Priority (holding register 3018)
+        if 3018 in holding_map:
+            try:
+                wm_regs = self.read_holding_registers(3018, 1)
+                if wm_regs is not None and len(wm_regs) >= 1:
+                    data.work_mode = int(wm_regs[0])
+                    logger.debug("[TOU] work_mode=%s", data.work_mode)
+            except Exception as e:
+                logger.debug(f"Could not read work_mode register 3018: {e}")
 
         # MOD TL3-XH TOU slots 5-9 (registers 3050-3059)
         if 3050 in holding_map:

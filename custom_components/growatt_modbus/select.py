@@ -107,18 +107,25 @@ async def async_setup_entry(
         )
         _LOGGER.info("%s control enabled (register %d found)", control_name, register_num)
 
-    # MOD TL3-XH TOU priority and enable selects (9 periods × 2 = 18 entities)
+    # Work Mode (priority) select for MIN TL-XH / TL-XH — register 3018
+    if 3018 in holding_registers:
+        entities.append(GrowattTlxhWorkModeSelect(coordinator, config_entry))
+        _LOGGER.info("TL-XH Work Mode control enabled (register 3018)")
+
+    # TOU priority and enable selects — triggered by register 3038 (MOD GEN4 and MIN TL-XH / TL-XH)
+    # Filter to only periods whose registers are defined in this profile (avoids writing to absent registers)
     if 3038 in holding_registers:
-        for period_def in MOD_TOU_PERIODS:
+        active_periods = [p for p in MOD_TOU_PERIODS if p['start_reg'] in holding_registers]
+        for period_def in active_periods:
             entities.append(GrowattModTouPriority(coordinator, config_entry, period_def))
             entities.append(GrowattModTouEnable(coordinator, config_entry, period_def))
-        _LOGGER.info("MOD TOU priority/enable controls enabled (%d select entities for %d periods)",
-                     len(MOD_TOU_PERIODS) * 2, len(MOD_TOU_PERIODS))
+        _LOGGER.info("TOU priority/enable controls enabled (%d select entities for %d periods)",
+                     len(active_periods) * 2, len(active_periods))
 
-    # MOD GEN4 Allow Grid Charge gate (register 3049) — prerequisite for TOU persistence
+    # Allow Grid Charge gate (register 3049) — prerequisite for TOU persistence
     if 3049 in holding_registers:
         entities.append(GrowattModAllowGridChargeSelect(coordinator, config_entry))
-        _LOGGER.info("MOD Allow Grid Charge control enabled (register 3049)")
+        _LOGGER.info("Allow Grid Charge control enabled (register 3049)")
 
     if entities:
         entry_name = config_entry.data.get("name", config_entry.title)
@@ -784,6 +791,72 @@ class GrowattModAllowGridChargeSelect(CoordinatorEntity, SelectEntity):
             else:
                 _LOGGER.warning(
                     "allow_grid_charge: write succeeded but value reverted. "
+                    "Possible causes: ShineWiFi/cloud dongle overriding local writes, "
+                    "or inverter firmware rejecting the value."
+                )
+            self.coordinator.track_write(self._REGISTER, value, self._DATA_FIELD)
+            await self.coordinator.async_request_refresh()
+
+
+class GrowattTlxhWorkModeSelect(CoordinatorEntity, SelectEntity):
+    """Work Mode (priority) select for MIN TL-XH / TL-XH inverters (holding register 3018).
+
+    Controls which source takes priority: load, battery, or grid.
+    RTU V1.39 values: 0=Load First, 1=PV First, 2=Battery First, 3=Grid First.
+    PV First (1) is omitted — it is hardware-internal and not a meaningful user option.
+    """
+
+    _REGISTER = 3018
+    _DATA_FIELD = "work_mode"
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_icon = "mdi:home-battery"
+    _attr_options = ["Load First", "Battery First", "Grid First"]
+
+    _OPTIONS_TO_VALUE = {"Load First": 0, "Battery First": 2, "Grid First": 3}
+    _VALUE_TO_OPTION = {0: "Load First", 1: "Load First", 2: "Battery First", 3: "Grid First"}
+
+    def __init__(self, coordinator, config_entry) -> None:
+        """Initialize the Work Mode select."""
+        super().__init__(coordinator)
+        self._config_entry = config_entry
+        entry_name = config_entry.data.get("name", config_entry.title)
+        self._attr_name = f"{entry_name} Work Mode"
+        self._attr_unique_id = f"{config_entry.entry_id}_work_mode"
+
+    @property
+    def device_info(self):
+        """Return device information."""
+        return self.coordinator.get_device_info(DEVICE_TYPE_BATTERY)
+
+    @property
+    def current_option(self) -> str | None:
+        """Return current work mode."""
+        data = self.coordinator.data
+        if data is None:
+            return None
+        raw = getattr(data, self._DATA_FIELD, 0)
+        return self._VALUE_TO_OPTION.get(int(raw))
+
+    async def async_select_option(self, option: str) -> None:
+        """Write new work mode to register 3018."""
+        value = self._OPTIONS_TO_VALUE.get(option)
+        if value is None:
+            _LOGGER.error("Invalid work_mode option: %s", option)
+            return
+        try:
+            write_ok, verified = await self.hass.async_add_executor_job(
+                self.coordinator.modbus_client.write_register_verified, self._REGISTER, value,
+            )
+        except ModbusWriteError:
+            _LOGGER.error("Failed to write work_mode (register %d)", self._REGISTER)
+            return
+        if write_ok:
+            if verified:
+                _LOGGER.info("Set work_mode to %s (value=%d, verified)", option, value)
+            else:
+                _LOGGER.warning(
+                    "work_mode: write succeeded but value reverted. "
                     "Possible causes: ShineWiFi/cloud dongle overriding local writes, "
                     "or inverter firmware rejecting the value."
                 )
