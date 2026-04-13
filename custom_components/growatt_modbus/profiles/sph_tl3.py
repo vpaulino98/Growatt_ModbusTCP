@@ -106,14 +106,18 @@ SPH_TL3_3000_10000 = {
         1041: {'name': 'battery_type', 'scale': 1, 'unit': ''},
         
         # Power Flow
-        1015: {'name': 'power_to_user_high', 'scale': 1, 'unit': '', 'pair': 1016},
+        # Per Growatt Modbus Protocol II V1.24:
+        # 1021: PactouserTotal  = AC power to user total (grid import, positive = importing)
+        # 1029: Pactogrid total = AC power to grid total (grid export, positive = exporting)
+        # 1037: PLocalLoad total = INV power to local load total
+        1015: {'name': 'power_to_user_high', 'scale': 1, 'unit': '', 'pair': 1016, 'desc': 'Power imported from grid HIGH (legacy register)'},
         1016: {'name': 'power_to_user_low', 'scale': 1, 'unit': '', 'pair': 1015, 'combined_scale': 0.1, 'combined_unit': 'W'},
-        1021: {'name': 'power_to_load_high', 'scale': 1, 'unit': '', 'pair': 1022},
-        1022: {'name': 'power_to_load_low', 'scale': 1, 'unit': '', 'pair': 1021, 'combined_scale': 0.1, 'combined_unit': 'W'},
-        1029: {'name': 'power_to_grid_high', 'scale': 1, 'unit': '', 'pair': 1030},
+        1021: {'name': 'power_to_user_total_high', 'scale': 1, 'unit': '', 'pair': 1022, 'desc': 'AC power to user total H (PactouserTotal = grid import)', 'maps_to': 'power_to_user'},
+        1022: {'name': 'power_to_user_total_low', 'scale': 1, 'unit': '', 'pair': 1021, 'combined_scale': 0.1, 'combined_unit': 'W'},
+        1029: {'name': 'power_to_grid_high', 'scale': 1, 'unit': '', 'pair': 1030, 'desc': 'AC power to grid total H (Pactogrid total)'},
         1030: {'name': 'power_to_grid_low', 'scale': 1, 'unit': '', 'pair': 1029, 'combined_scale': 0.1, 'combined_unit': 'W', 'signed': True},
-        1037: {'name': 'self_consumption_power_high', 'scale': 1, 'unit': '', 'pair': 1038},
-        1038: {'name': 'self_consumption_power_low', 'scale': 1, 'unit': '', 'pair': 1037, 'combined_scale': 0.1, 'combined_unit': 'W'},
+        1037: {'name': 'power_to_load_high', 'scale': 1, 'unit': '', 'pair': 1038, 'desc': 'INV power to local load total H (PLocalLoad total)'},
+        1038: {'name': 'power_to_load_low', 'scale': 1, 'unit': '', 'pair': 1037, 'combined_scale': 0.1, 'combined_unit': 'W'},
         1039: {'name': 'self_consumption_percentage', 'scale': 1, 'unit': '%'},
         
         # Energy Breakdown

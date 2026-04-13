@@ -8,6 +8,8 @@
 
 ---
 
+- ** SPH-TL3 - fixing the issue when Grid Power and Power to Load were indicated as swapped ** 
+
 - ** SPH-TL3 - adding elements from SPH, which are relevant and tested working also on SPH-TL3: **
     specifically:
      - Max Output Power Rate
